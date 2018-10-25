@@ -17,30 +17,41 @@ from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader, Dataset
 import copy
+from logger import Logger
+import os
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+logger = Logger('./logs', 'drlog')
+dir_checkpoint = './models'
 
 def eval_model(model):
     model.eval()
     tot = 0
     for inputs, true_masks in eval_loader:
+        inputs = inputs.to(device=device, dtype=torch.float)
+        true_masks = true_masks.to(device=device, dtype=torch.float)
         masks_pred = model(inputs)
         mask_pred = (F.sigmoid(masks_pred) > 0.5).float()
-        tot += dice_coeff(mask_pred, true_mask).item()
+        tot += dice_coeff(mask_pred, true_masks).item()
     return tot / len(eval_dataset)
 
+disp_interval = 1
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5):
     best_model = copy.deepcopy(model.state_dict())
     best_acc = 0.
+    model.to(device=device)
+    batch_step_count = 0
     for epoch in range(num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
         scheduler.step()
         model.train()
         epoch_loss = 0
-        all_steps = len(train_dataset)/batch_size
+        N_train = len(train_dataset)
         for inputs, true_masks in train_loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
+            inputs = inputs.to(device=device, dtype=torch.float)
+            true_masks = true_masks.to(device=device, dtype=torch.float)
 
-            masks_pred = model(imgs)
+            masks_pred = model(inputs)
             masks_probs = F.sigmoid(masks_pred)
             masks_probs_flat = masks_probs.view(-1)
 
@@ -49,29 +60,29 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             loss = criterion(masks_probs_flat, true_masks_flat)
             epoch_loss += loss.item()
 
-            print('{0:.4f} --- loss: {1:.6f}'.format(i * batch_size / N_train, loss.item()))
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-        print('Epoch finished ! Loss: {}'.format(epoch_loss / i))
+            
+            batch_step_count += 1
+            
+            if batch_step_count % disp_interval == 0:
+                logger.scalar_summary('train_loss', epoch_loss / batch_step_count, step=batch_step_count)
 
         val_dice = eval_model(model)
         print('Validation Dice Coeff: {}'.format(val_dice))
 
-        if save_cp:
-            torch.save(net.state_dict(),
-                       dir_checkpoint + 'CP{}.pth'.format(epoch + 1))
-            print('Checkpoint {} saved !'.format(epoch + 1))
-
-
+        if not os.path.exists(dir_checkpoint):
+            os.mkdir(dir_checkpoint)
+        torch.save(model.state_dict(),
+                       os.path.join(dir_checkpoint, 'model_{}.pth'.format(epoch + 1)))
+        print('Checkpoint {} saved !'.format(epoch + 1))
 
 def get_args():
     parser = OptionParser()
     parser.add_option('-e', '--epochs', dest='epochs', default=5, type='int',
                       help='number of epochs')
-    parser.add_option('-b', '--batch-size', dest='batchsize', default=10,
+    parser.add_option('-b', '--batch-size', dest='batchsize', default=1,
                       type='int', help='batch size')
     parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
                       type='float', help='learning rate')
@@ -85,7 +96,7 @@ if __name__ == '__main__':
     args = get_args()
 
     model = UNet(n_channels=3, n_classes=4)
-
+    
     if args.load:
         model.load_state_dict(torch.load(args.load))
         print('Model loaded from {}'.format(args.load))
