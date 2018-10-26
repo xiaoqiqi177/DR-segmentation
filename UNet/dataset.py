@@ -35,33 +35,26 @@ class IDRIDDataset(Dataset):
     def padding(self, length, k):
         return length//k * k
 
-    def cv2_loader(self, image_path):
-        #read image, and transfrom from bgr to rgb
-        image = cv2.imread(image_path)[:,:,::-1]
-        h, w = image.shape[:2]
-        h, w = h//4, w//4
-        h, w = self.padding(h, 16), self.padding(w, 16)
-        image = cv2.resize(image, (w, h))
-        return image
-
     def __getitem__(self, idx):
         image_path = self.image_paths[idx]
         mask_path4 = self.mask_paths[idx]
-        #item = self.pil_loader(image_path)
-        item = self.cv2_loader(image_path)
+        item = self.pil_loader(image_path)
+        info = [item]
+        w, h = item.size
         if self.mask_paths is not None:
-            h, w = item.shape[:2]
-            info = np.zeros((h, w, 3 + self.class_number))
-            info[:, :, :3] = item 
             for i, mask_path in enumerate(mask_path4):
                 if mask_path is None:
-                    continue
+                    info.append(Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8)))
                 else:
-                    #info[:, :, 3+i] = self.pil_loader(mask_path)
-                    info[:, :, 3+i] = self.cv2_loader(mask_path)[:, :, 0]
-            #if self.transfrom:
-            #    info = self.transform(info)
-            info = np.transpose(info, [2, 0, 1])
-            return info[:3, :, :], info[3:, :, :]
+                    info.append(self.pil_loader(mask_path))
+        if self.transform:
+            info = self.transform(info)
+            inputs = np.transpose(np.array(info[0]), (2, 0, 1))
+            masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
+            masks_sum = np.sum(masks, axis=0)
+            empty_mask = 1 - masks_sum
+            masks = np.concatenate((masks, empty_mask[None, :, :]), axis=0)
+            masks = np.argmax(masks, axis=0)
+            return inputs, masks
         else:
             return item
