@@ -57,4 +57,4 @@ class IDRIDDataset(Dataset):
             masks = np.argmax(masks, axis=0)
             return inputs, masks
         else:
-            return item
+            return np.transpose(np.array(item), (2, 0, 1))
