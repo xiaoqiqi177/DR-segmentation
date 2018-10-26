@@ -38,7 +38,7 @@ def eval_model(model, eval_loader):
         inputs = inputs.to(device=device, dtype=torch.float)
         true_masks = true_masks.to(device=device, dtype=torch.float)
         
-        masks_pred = model(inputs)
+        masks_pred = model(inputs)[-1]
         
         _, mask_indices = torch.max(masks_pred, 1)
         _, true_masks_indices= torch.max(true_masks, 1)
