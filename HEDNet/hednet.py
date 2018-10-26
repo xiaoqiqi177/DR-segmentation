@@ -229,7 +229,7 @@ class HNNNet(nn.Module):
         self.dsn3 = nn.Conv2d(256, 1, 1)
         self.dsn4 = nn.Conv2d(512, 1, 1)
         self.dsn5 = nn.Conv2d(512, 1, 1)
-        self.dsn6 = nn.Conv2d(5, 1, 1)
+        self.dsn6 = nn.Conv2d(5, 5, 1)
         
         # define upsampling/deconvolutional layers
         self.upscore2 = nn.Upsample(scale_factor=2, mode='bilinear')
@@ -283,8 +283,7 @@ class HNNNet(nn.Module):
         d3 = F.sigmoid(d3)
         d4 = F.sigmoid(d4)
         d5 = F.sigmoid(d5)
-        d6 = F.sigmoid(d6)
-
+        #d6 = F.sigmoid(d6)
         return d1, d2, d3, d4, d5, d6
     
     # function to crop the padding pixels

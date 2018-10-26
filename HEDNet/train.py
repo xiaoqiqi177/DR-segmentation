@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from torch import optim
 
 from torch.optim import lr_scheduler
-from unet import UNet
+from hednet import HNNNet
 from utils import get_images
 from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
@@ -75,7 +75,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
 
-            masks_pred = model(inputs)
+            masks_pred = model(inputs)[-1]
             masks_pred = softmax(masks_pred) 
             losses_dice = dice_loss(masks_pred[:, 1:, :, :], true_masks[:, 1:, :, :])
 
@@ -141,7 +141,7 @@ def get_args():
 if __name__ == '__main__':
     args = get_args()
 
-    model = UNet(n_channels=3, n_classes=5)
+    model = HNNNet()
     
     if args.load:
         model.load_state_dict(torch.load(args.load))
