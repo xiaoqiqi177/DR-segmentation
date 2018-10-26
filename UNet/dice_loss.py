@@ -1,41 +1,18 @@
 import torch
 from torch.autograd import Function, Variable
 
-class DiceCoeff(Function):
-    """Dice coeff for individual examples"""
-
-    def forward(self, input, target):
-        self.save_for_backward(input, target)
-        eps = 0.0001
-        self.inter = torch.dot(input.view(-1), target.view(-1))
-        self.union = torch.sum(input) + torch.sum(target) + eps
-
-        t = (2 * self.inter.float() + eps) / self.union.float()
-        return t
-
-    # This function has only a single output, so it gets only one gradient
-    def backward(self, grad_output):
-
-        input, target = self.saved_variables
-        grad_input = grad_target = None
-
-        if self.needs_input_grad[0]:
-            grad_input = grad_output * 2 * (target * self.union + self.inter) \
-                         / self.union * self.union
-        if self.needs_input_grad[1]:
-            grad_target = None
-
-        return grad_input, grad_target
-
+def dice_loss(input, target):
+    smooth = 1.
+    class_no = input.shape[1]
+    iflat = input.view(class_no, -1)
+    tflat = target.view(class_no, -1)
+    intersection = torch.sum(iflat * tflat, 1)
+    return 1 - ((2. * intersection + smooth) / (torch.sum(iflat, 1) + torch.sum(tflat, 1) + smooth))
 
 def dice_coeff(input, target):
-    """Dice coeff for batches"""
-    if input.is_cuda:
-        s = torch.FloatTensor(1).cuda().zero_()
-    else:
-        s = torch.FloatTensor(1).zero_()
-
-    for i, c in enumerate(zip(input, target)):
-        s = s + DiceCoeff().forward(c[0], c[1])
-
-    return s / (i + 1)
+    eps = 0.0001
+    class_no = input.shape[1]
+    inter = torch.dot(input.view(class_no, -1), target.view(class_no, -1))
+    union = torch.sum(input, 1) + torch.sum(target, 1) + eps
+    t = (2 * inter.float() + eps) / union.float()
+    return t

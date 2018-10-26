@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from torch import optim
 
 from torch.optim import lr_scheduler
-from dice_loss import dice_coeff
 from unet import UNet
 from utils import get_images
 from dataset import IDRIDDataset
@@ -20,24 +19,38 @@ from torch.utils.data import DataLoader, Dataset
 import copy
 from logger import Logger
 import os
+from dice_loss import dice_loss, dice_coeff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 logger = Logger('./logs', 'drlog')
 dir_checkpoint = './models'
 def eval_model(model, eval_loader):
     model.eval()
-    tot = 0
+    fg_tot = 0
+    bg_tot = 0
     for inputs, true_masks in eval_loader:
         inputs = inputs.to(device=device, dtype=torch.float)
-        true_masks = true_masks.to(device=device)
+        true_masks = true_masks.to(device=device, dtype=torch.float)
+        
         masks_pred = model(inputs)
+        
         _, mask_indices = torch.max(masks_pred, 1)
-        mask_size = true_masks.shape[0] * true_masks.shape[1] * true_masks.shape[2]
-        correct = torch.sum(mask_indices == true_masks).float() / mask_size 
-        tot += correct.item()
-    return tot / len(eval_dataset)
+        _, true_masks_indices= torch.max(true_masks, 1)
+        mask_size_bg = torch.sum(true_masks_indices == 0)
+        mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0)
+        if mask_size_fg > 0: 
+            correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0)).float()) / (mask_size_fg.float())
+            fg_tot += correct_fg.item()
+        if mask_size_bg > 0:
+            correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
+            bg_tot += correct_bg.item()
+        
+        dice_coeffs = dice_coeff(masks_pred[:, 1:, :, :], true_masks[:, 1:, :, :])
+    return bg_tot / len(eval_dataset), fg_tot / len(eval_dataset), dice_coeffs
 
-disp_interval = 1
+lesions = ['ex', 'he', 'ma', 'se']
+disp_interval = 5
+softmax = nn.Softmax(1)
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5):
     best_model = copy.deepcopy(model.state_dict())
     best_acc = 0.
@@ -47,19 +60,34 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
         scheduler.step()
         model.train()
-        epoch_loss = 0
+        epoch_loss_ce = 0
+        epoch_losses_dice = [0, 0, 0, 0]
         N_train = len(train_dataset)
         for inputs, true_masks in train_loader:
             inputs = inputs.to(device=device, dtype=torch.float)
-            true_masks = true_masks.to(device=device)
+            true_masks = true_masks.to(device=device, dtype=torch.float)
 
             masks_pred = model(inputs)
+            masks_pred = softmax(masks_pred) 
+            losses_dice = dice_loss(masks_pred[:, 1:, :, :], true_masks[:, 1:, :, :])
 
             masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
-            true_masks_flat = true_masks.reshape(-1)
-            loss = criterion(masks_pred_flat, true_masks_flat.long())
-            epoch_loss += loss.item()
+            true_masks_indices = torch.argmax(true_masks, 1)
+            true_masks_flat = true_masks_indices.reshape(-1)
+            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+            
+            ce_weight = 1.
+            lesion_dice_weights = [1., 1., 1., 1.]
+            loss = loss_ce * ce_weight
+            for lesion_dice_weight, loss_dice in zip(lesion_dice_weights, losses_dice):
+                loss += loss_dice * lesion_dice_weight
+            
+            epoch_loss_ce += loss_ce.item()
+            epoch_loss_tot = epoch_loss_ce
+            for i, loss_dice in enumerate(losses_dice):
+                epoch_losses_dice[i] += losses_dice[i].item()
+                epoch_loss_tot += epoch_losses_dice[i]
 
             optimizer.zero_grad()
             loss.backward()
@@ -68,12 +96,18 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             batch_step_count += 1
             
             if batch_step_count % disp_interval == 0:
-                logger.scalar_summary('train_loss', epoch_loss / batch_step_count, step=batch_step_count)
+                logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=batch_step_count)
+                for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
+                    logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=batch_step_count)
+                logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=batch_step_count)
 
-        val_dice = eval_model(model, eval_loader)
+        bg_acc, fg_acc, dice_coeffs = eval_model(model, eval_loader)
 
-        print('Validation Dice Coeff: {}'.format(val_dice))
-        logger.scalar_summary('val_dice', val_dice, step=batch_step_count)
+        print('fg_acc, bg_acc: {}, {}'.format(fg_acc, bg_acc))
+        logger.scalar_summary('bg_acc', bg_acc, step=batch_step_count)
+        logger.scalar_summary('fg_acc', fg_acc, step=batch_step_count)
+        for lesion, coeff in zip(lesions, dice_coeffs):
+            logger.scalar_summary('dice_coeff_'+lesion, coeff.item(), step=batch_step_count)
 
         if not os.path.exists(dir_checkpoint):
             os.mkdir(dir_checkpoint)

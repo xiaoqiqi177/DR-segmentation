@@ -53,8 +53,8 @@ class IDRIDDataset(Dataset):
             masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
             masks_sum = np.sum(masks, axis=0)
             empty_mask = 1 - masks_sum
-            masks = np.concatenate((masks, empty_mask[None, :, :]), axis=0)
-            masks = np.argmax(masks, axis=0)
+            masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)
+            #masks = np.argmax(masks, axis=0)
             return inputs, masks
         else:
             return np.transpose(np.array(item), (2, 0, 1))
