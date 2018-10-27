@@ -28,13 +28,6 @@ class IDRIDDataset(Dataset):
             img = Image.open(f)
             return img.convert('RGB')
 
-    def loader(self, image_path):
-        with Image.open(path) as img:
-            return img
-
-    def padding(self, length, k):
-        return length//k * k
-
     def __getitem__(self, idx):
         image_path = self.image_paths[idx]
         mask_path4 = self.mask_paths[idx]

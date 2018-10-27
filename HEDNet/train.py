@@ -22,8 +22,8 @@ import os
 from dice_loss import dice_loss, dice_coeff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-logger = Logger('./logs', 'drlog2')
-dir_checkpoint = './models2'
+logger = Logger('./logs', 'drlog')
+dir_checkpoint = './models'
 def eval_model(model, eval_loader):
     model.eval()
     fg_tot = 0
@@ -86,8 +86,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             
             ce_weight = 1.
-            lesion_dice_weights = [0., 0., 0., 0.]
-            #lesion_dice_weights = [1., 1., 1., 1.]
+            #lesion_dice_weights = [0., 0., 0., 0.]
+            lesion_dice_weights = [1., 1., 1., 1.]
             loss = loss_ce * ce_weight
             for lesion_dice_weight, loss_dice in zip(lesion_dice_weights, losses_dice):
                 loss += loss_dice * lesion_dice_weight
@@ -151,14 +151,17 @@ if __name__ == '__main__':
     train_image_paths, train_mask_paths = get_images(image_dir, 'train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, 'eval')
 
+    #normalize only apply to the original image.
     train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(20),
                                 RandomCrop(512),
+                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
     eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
                                 Compose([
                                 RandomCrop(512),
+                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
 
     train_loader = DataLoader(train_dataset, args.batchsize, shuffle=True)

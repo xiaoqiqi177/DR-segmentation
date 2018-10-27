@@ -49,20 +49,16 @@ class IDRIDDataset(Dataset):
                     info.append(self.pil_loader(mask_path))
         if self.transform:
             info = self.transform(info)
-            inputs = np.transpose(np.array(info[0]), (2, 0, 1))
+            inputs = np.array(info[0])
             esp = 0.01
-            if (np.mean(inputs, (1, 2)) < esp).any():
+            img_mean = np.mean(inputs, (1, 2))
+            if abs(img_mean[0] - 0.485) < esp or abs(img_mean[1] - 0.456) < esp or abs(img_mean[2] - 0.406) < esp:
                 return [], []
-            #inputs = (inputs - np.min(inputs, (1, 2))[:, None, None]) / np.mean(inputs, (1, 2))[:, None, None]
-            inputs = inputs / 255.
             masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
             masks_sum = np.sum(masks, axis=0)
             empty_mask = 1 - masks_sum
             masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)
-            #masks = np.argmax(masks, axis=0)
             return inputs, masks
         else:
             inputs = np.transpose(np.array(item), (2, 0, 1))
-            #inputs = (inputs - np.min(inputs, (1, 2))[:, None, None]) / np.mean(inputs, (1, 2))[:, None, None]
-            inputs = inputs / 255.
             return inputs

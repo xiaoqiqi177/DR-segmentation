@@ -176,7 +176,7 @@ class VGG(nn.Module):
                 m.bias.data.zero_()
 
 # load pre-trained VGG-16 model
-def vgg16(pretrained=False, **kwargs):
+def vgg16(pretrained=True, **kwargs):
     """VGG 16-layer model (configuration "D")
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet

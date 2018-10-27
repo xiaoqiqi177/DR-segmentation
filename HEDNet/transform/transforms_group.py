@@ -136,7 +136,7 @@ class Normalize(object):
         self.mean = mean
         self.std = std
 
-    def __call__(self, tensor):
+    def __call__(self, tensors):
         """
         Args:
             tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
@@ -144,7 +144,7 @@ class Normalize(object):
         Returns:
             Tensor: Normalized Tensor image.
         """
-        return F.normalize(tensor, self.mean, self.std)
+        return [F.normalize(F.to_tensor(tensors[0]), self.mean, self.std)]+tensors[1:]
 
     def __repr__(self):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
@@ -442,7 +442,22 @@ class RandomCrop(object):
             PIL Image: Cropped image.
         """
         out_imgs = []
-        for img in imgs:
+        img = imgs[0]
+        if self.padding is not None:
+            img = F.pad(img, self.padding, self.fill, self.padding_mode)
+
+        # pad the width if needed
+        if self.pad_if_needed and img < self.size[1]:
+            img = F.pad(img, (int((1 + self.size[1] - img1.size[0]) / 2), 0), self.fill, self.padding_mode)
+
+        # pad the height if needed
+        if self.pad_if_needed and img.size[1] < self.size[0]:
+                img = F.pad(img, (0, int((1 + self.size[0] - img1.size[1]) / 2)), self.fill, self.padding_mode)
+
+        i, j, h, w = self.get_params(img, self.size)
+        out_imgs.append(F.crop(img, i, j, h, w))
+
+        for img in imgs[1:]:
             if self.padding is not None:
                 img = F.pad(img, self.padding, self.fill, self.padding_mode)
 
@@ -454,7 +469,6 @@ class RandomCrop(object):
             if self.pad_if_needed and img.size[1] < self.size[0]:
                 img = F.pad(img, (0, int((1 + self.size[0] - img1.size[1]) / 2)), self.fill, self.padding_mode)
 
-            i, j, h, w = self.get_params(img, self.size)
             out_imgs.append(F.crop(img, i, j, h, w))
         return out_imgs
 
