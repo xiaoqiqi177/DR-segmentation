@@ -3,7 +3,7 @@ from torch.autograd import Function, Variable
 
 def dice_loss(input, target):
     assert input.shape == target.shape
-    eps = 0.0001
+    eps = 1.
     class_no = input.shape[1]
     input_flat = input.view(class_no, -1)
     target_flat = target.view(class_no, -1)
@@ -14,7 +14,7 @@ def dice_loss(input, target):
 
 def dice_coeff(input, target):
     assert input.shape == target.shape
-    eps = 0.0001
+    eps = 1.
     class_no = input.shape[1]
     input_flat = input.view(class_no, -1)
     target_flat = target.view(class_no, -1)

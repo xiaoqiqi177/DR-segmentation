@@ -22,8 +22,12 @@ import os
 from dice_loss import dice_loss, dice_coeff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-logger = Logger('./logs', 'drlog')
-dir_checkpoint = './models'
+logger = Logger('./logs', 'drlog2')
+dir_checkpoint = './models2'
+
+lesions = ['ex', 'he', 'ma', 'se']
+softmax = nn.Softmax(1)
+
 def eval_model(model, eval_loader):
     model.eval()
     fg_tot = 0
@@ -51,11 +55,10 @@ def eval_model(model, eval_loader):
             correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
             bg_tot += correct_bg.item()
         
-        dice_coeffs += dice_coeff(masks_pred[:, 1:, :, :], true_masks[:, 1:, :, :])
+        masks_pred_softmax = softmax(masks_pred) 
+        dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
     return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot
 
-lesions = ['ex', 'he', 'ma', 'se']
-softmax = nn.Softmax(1)
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5):
     best_model = copy.deepcopy(model.state_dict())
     best_acc = 0.
@@ -76,8 +79,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks = true_masks.to(device=device, dtype=torch.float)
 
             masks_pred = model(inputs)[-1]
-            masks_pred = softmax(masks_pred) 
-            losses_dice = dice_loss(masks_pred[:, 1:, :, :], true_masks[:, 1:, :, :])
 
             masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
@@ -85,6 +86,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             
+            masks_pred_softmax = softmax(masks_pred) 
+            losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             ce_weight = 1.
             #lesion_dice_weights = [0., 0., 0., 0.]
             lesion_dice_weights = [1., 1., 1., 1.]
@@ -171,7 +174,7 @@ if __name__ == '__main__':
                               lr=args.lr,
                               momentum=0.9,
                               weight_decay=0.0005)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
     #bg, ex, he, ma, se
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1.]).to(device))
     
