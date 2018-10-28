@@ -8,10 +8,10 @@ def dice_loss(input, target):
     class_no = input.shape[1]
     input_flat = input.view(batch_size, class_no, -1)
     target_flat = target.view(batch_size, class_no, -1)
-    inter = torch.sum(input_flat * target_flat, (0, 2))
-    union = torch.sum(input_flat, (0, 2)) + torch.sum(target_flat, (0, 2)) + eps
+    inter = torch.sum(input_flat * target_flat, 2)
+    union = torch.sum(input_flat, 2) + torch.sum(target_flat, 2) + eps
     t = (2 * inter + eps) / union
-    return 1-t
+    return torch.mean(1-t, 0)
 
 def dice_coeff(input, target):
     assert input.shape == target.shape
@@ -20,7 +20,7 @@ def dice_coeff(input, target):
     class_no = input.shape[1]
     input_flat = input.view(batch_size, class_no, -1)
     target_flat = target.view(batch_size, class_no, -1)
-    inter = torch.sum(input_flat * target_flat, (0, 2))
-    union = torch.sum(input_flat, (0, 2)) + torch.sum(target_flat, (0, 2)) + eps
+    inter = torch.sum(input_flat * target_flat, 2)
+    union = torch.sum(input_flat, 2) + torch.sum(target_flat, 2) + eps
     t = (2 * inter.float() + eps) / union.float()
-    return t.cpu().detach().numpy()
+    return torch.mean(t, 0).cpu().detach().numpy()

@@ -219,7 +219,7 @@ def vgg16(pretrained=True, **kwargs):
 
 # definition of HED module
 class HNNNet(nn.Module):
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, class_number=2):
         # define VGG architecture and layers
         super(HNNNet, self).__init__()
         
@@ -229,7 +229,7 @@ class HNNNet(nn.Module):
         self.dsn3 = nn.Conv2d(256, 1, 1)
         self.dsn4 = nn.Conv2d(512, 1, 1)
         self.dsn5 = nn.Conv2d(512, 1, 1)
-        self.dsn6 = nn.Conv2d(5, 5, 1)
+        self.dsn6 = nn.Conv2d(5, class_number, 1)
         
         # define upsampling/deconvolutional layers
         self.upscore2 = nn.Upsample(scale_factor=2, mode='bilinear')

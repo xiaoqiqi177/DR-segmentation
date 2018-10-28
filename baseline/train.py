@@ -108,7 +108,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            
             masks_pred_softmax = softmax(masks_pred) 
             losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
@@ -118,9 +117,9 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                 loss += loss_dice * lesion_dice_weight
             
             epoch_loss_ce += loss_ce.item()
-            epoch_loss_tot = epoch_loss_ce
+            epoch_loss_tot = epoch_loss_ce * ce_weight
             for i, loss_dice in enumerate(losses_dice):
-                epoch_losses_dice[i] += losses_dice[i].item()
+                epoch_losses_dice[i] += losses_dice[i].item() * lesion_dice_weights[i]
                 epoch_loss_tot += epoch_losses_dice[i]
 
             optimizer.zero_grad()
@@ -155,7 +154,7 @@ if __name__ == '__main__':
     if net_name == 'unet': 
         model = UNet(n_channels=3, n_classes=5)
     else:
-        model = HNNNet()
+        model = HNNNet(pretrained=True, class_number=5)
     
     if args.load:
         model.load_state_dict(torch.load(args.load))
