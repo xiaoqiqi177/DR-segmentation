@@ -56,10 +56,6 @@ def eval_model(model, eval_loader):
     eval_tot = len(eval_loader)
     dice_coeffs = np.zeros(4)
     for inputs, true_masks in eval_loader:
-        if len(inputs) == 0:
-            eval_tot -= 1
-            continue
-
         inputs = inputs.to(device=device, dtype=torch.float)
         true_masks = true_masks.to(device=device, dtype=torch.float)
         

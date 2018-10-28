@@ -33,7 +33,3 @@ def get_images(image_dir, phase='train'):
                 paths.append(None)
         mask_paths.append(paths)
     return image_paths, mask_paths
-
-# Test get_images.
-image_dir = '/media/hdd1/qiqix/IDRID/Sub1'
-image_paths, mask_paths = get_images(image_dir, 'eval')
