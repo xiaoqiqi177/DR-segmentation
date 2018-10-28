@@ -39,6 +39,8 @@ parser.add_option('-m', '--model-dir', dest='modeldir', default='./models',
                     type='str', help='models stored')
 parser.add_option('-n', '--net-name', dest='netname', default='unet',
                     type='str', help='net name:unet/hednet')
+parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
+                      default=False, help='preprocess input images')
 (args, _) = parser.parse_args()
 
 logger = Logger('./logs', args.logdir)
@@ -160,8 +162,8 @@ if __name__ == '__main__':
         print('Model loaded from {}'.format(args.load))
     
     image_dir = '/media/hdd1/qiqix/IDRID/Sub1'
-    train_image_paths, train_mask_paths = get_images(image_dir, 'train')
-    eval_image_paths, eval_mask_paths = get_images(image_dir, 'eval')
+    train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, 'train')
+    eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, 'eval')
 
     if net_name == 'unet':
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
