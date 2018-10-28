@@ -53,4 +53,5 @@ def get_images(image_dir, preprocess=False, phase='train'):
             else:
                 paths.append(None)
         mask_paths.append(paths)
+    
     return image_paths, mask_paths
