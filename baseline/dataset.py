@@ -28,13 +28,6 @@ class IDRIDDataset(Dataset):
             img = Image.open(f)
             return img.convert('RGB')
 
-    def loader(self, image_path):
-        with Image.open(path) as img:
-            return img
-
-    def padding(self, length, k):
-        return length//k * k
-
     def __getitem__(self, idx):
         image_path = self.image_paths[idx]
         mask_path4 = self.mask_paths[idx]
@@ -49,16 +42,16 @@ class IDRIDDataset(Dataset):
                     info.append(self.pil_loader(mask_path))
         if self.transform:
             info = self.transform(info)
-            inputs = np.array(info[0])
-            esp = 0.01
-            img_mean = np.mean(inputs, (1, 2))
-            if abs(img_mean[0] - 0.485) < esp or abs(img_mean[1] - 0.456) < esp or abs(img_mean[2] - 0.406) < esp:
-                return [], []
+        inputs = np.array(info[0])
+        if inputs.shape[2] == 3:
+            inputs = np.transpose(np.array(info[0]), (2, 0, 1))
+            inputs = inputs / 255.
+        
+        if len(info) > 1:
             masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
             masks_sum = np.sum(masks, axis=0)
             empty_mask = 1 - masks_sum
             masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)
             return inputs, masks
         else:
-            inputs = np.transpose(np.array(item), (2, 0, 1))
             return inputs

@@ -11,6 +11,7 @@ from torch import optim
 
 from torch.optim import lr_scheduler
 from unet import UNet
+from hednet import HNNNet
 from utils import get_images
 from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
@@ -22,10 +23,30 @@ import os
 from dice_loss import dice_loss, dice_coeff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-logger = Logger('./logs', 'drlog')
-dir_checkpoint = './models'
 
+parser = OptionParser()
+parser.add_option('-e', '--epochs', dest='epochs', default=5, type='int',
+                      help='number of epochs')
+parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
+                      type='int', help='batch size')
+parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
+                      type='float', help='learning rate')
+parser.add_option('-c', '--load', dest='load',
+                      default=False, help='load file model')
+parser.add_option('-p', '--log-dir', dest='logdir', default='drlog',
+                    type='str', help='tensorboard log')
+parser.add_option('-m', '--model-dir', dest='modeldir', default='./models',
+                    type='str', help='models stored')
+parser.add_option('-n', '--net-name', dest='netname', default='unet',
+                    type='str', help='net name:unet/hednet')
+(args, _) = parser.parse_args()
+
+logger = Logger('./logs', args.logdir)
+dir_checkpoint = args.modeldir
+net_name = args.netname
+lesion_dice_weights = [0., 0., 0., 0.]
 lesions = ['ex', 'he', 'ma', 'se']
+
 softmax = nn.Softmax(1)
 
 def eval_model(model, eval_loader):
@@ -42,8 +63,10 @@ def eval_model(model, eval_loader):
         inputs = inputs.to(device=device, dtype=torch.float)
         true_masks = true_masks.to(device=device, dtype=torch.float)
         
-        masks_pred = model(inputs)
-        
+        if net_name == 'unet':
+            masks_pred = model(inputs)
+        elif net_name == 'hednet':
+            masks_pred = model(inputs)[-1]
         
         _, mask_indices = torch.max(masks_pred, 1)
         _, true_masks_indices= torch.max(true_masks, 1)
@@ -74,12 +97,13 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         N_train = len(train_dataset)
         batch_step_count = 0
         for inputs, true_masks in train_loader:
-            if len(inputs) == 0:
-                continue
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
 
-            masks_pred = model(inputs)
+            if net_name == 'unet':
+                masks_pred = model(inputs)
+            elif net_name == 'hednet':
+                masks_pred = model(inputs)[-1]
 
             masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
@@ -91,8 +115,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
             ce_weight = 1.
-            lesion_dice_weights = [0., 0., 0., 0.]
-            #lesion_dice_weights = [1., 1., 1., 1.]
             loss = loss_ce * ce_weight
             for lesion_dice_weight, loss_dice in zip(lesion_dice_weights, losses_dice):
                 loss += loss_dice * lesion_dice_weight
@@ -129,24 +151,13 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                         os.path.join(dir_checkpoint, 'model_{}.pth'.format(epoch + 1)))
             print('Checkpoint {} saved !'.format(epoch + 1))
 
-def get_args():
-    parser = OptionParser()
-    parser.add_option('-e', '--epochs', dest='epochs', default=5, type='int',
-                      help='number of epochs')
-    parser.add_option('-b', '--batch-size', dest='batchsize', default=1,
-                      type='int', help='batch size')
-    parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
-                      type='float', help='learning rate')
-    parser.add_option('-c', '--load', dest='load',
-                      default=False, help='load file model')
-
-    (options, args) = parser.parse_args()
-    return options
 
 if __name__ == '__main__':
-    args = get_args()
 
-    model = UNet(n_channels=3, n_classes=5)
+    if net_name == 'unet': 
+        model = UNet(n_channels=3, n_classes=5)
+    else:
+        model = HNNNet()
     
     if args.load:
         model.load_state_dict(torch.load(args.load))
@@ -156,14 +167,27 @@ if __name__ == '__main__':
     train_image_paths, train_mask_paths = get_images(image_dir, 'train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, 'eval')
 
-    train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+    if net_name == 'unet':
+        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(20),
-                                RandomCrop(1024),
+                                RandomCrop(512),
                     ]))
-    eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
                                 Compose([
-                                RandomCrop(1024),
+                                RandomCrop(512),
+                    ]))
+    elif net_name == 'hednet':
+        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+                                Compose([
+                                RandomRotation(20),
+                                RandomCrop(512),
+                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    ]))
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+                                Compose([
+                                RandomCrop(512),
+                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
 
     train_loader = DataLoader(train_dataset, args.batchsize, shuffle=True)

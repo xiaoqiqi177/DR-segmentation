@@ -27,9 +27,6 @@ train_loader = DataLoader(train_dataset, 1, shuffle=True)
 eval_loader = DataLoader(eval_dataset, 1, shuffle=False)
 
 for inputs, true_masks in train_loader:
-    if len(inputs) == 0:
-        print("all black image, skip...")
-        continue
     input_img = np.uint8(np.transpose(inputs[0], (1, 2, 0)) * 255.)[:,:,::-1]
     h, w = input_img.shape[:2]
     showimg = np.zeros((h, w *5, 3), dtype=np.uint8)
