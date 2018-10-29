@@ -32,8 +32,6 @@ parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
                       type='int', help='batch size')
 parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
                       type='float', help='learning rate')
-parser.add_option('-c', '--load', dest='load',
-                      default=False, help='load file model')
 parser.add_option('-r', '--resume', dest='resume',
                       default=False, help='resume file model')
 parser.add_option('-p', '--log-dir', dest='logdir', default='drlog',
@@ -137,10 +135,10 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     
     return images_batch
 
-def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5):
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
-    tot_step_count = 8500
-    for epoch in range(170, num_epochs):
+    tot_step_count = start_step
+    for epoch in range(start_epoch, start_epoch+num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
         scheduler.step()
         model.train()
@@ -190,14 +188,23 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             tot_step_count += 1
         
         # Traning logs
+        logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
         for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
             logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
-        #logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
         
+        # Validation logs
+        # bg_acc, fg_acc, dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
+        #print('eval_fg_acc, eval_bg_acc: {}, {}'.format(fg_acc, bg_acc))
+        #logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
+        #logger.scalar_summary('bg_acc', bg_acc, step=tot_step_count)
+        #logger.scalar_summary('fg_acc', fg_acc, step=tot_step_count)
+        #for lesion, coeff in zip(lesions, dice_coeffs):
+        #    logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
+
         if not os.path.exists(dir_checkpoint):
             os.mkdir(dir_checkpoint)
-        if (epoch + 1) % 1 == 0:
+        if (epoch + 1) % 20 == 0:
             state = {
                     'epoch': epoch,
                     'step': tot_step_count,
@@ -206,18 +213,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                     }
             torch.save(state,
                         os.path.join(dir_checkpoint, 'model_{}.pth.tar'.format(epoch + 1)))
-            logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
             print('Checkpoint {} saved !'.format(epoch + 1))
-        
-        # Validation logs
-        bg_acc, fg_acc, dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
-        print('eval_fg_acc, eval_bg_acc: {}, {}'.format(fg_acc, bg_acc))
-        logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
-        logger.scalar_summary('bg_acc', bg_acc, step=tot_step_count)
-        logger.scalar_summary('fg_acc', fg_acc, step=tot_step_count)
-        for lesion, coeff in zip(lesions, dice_coeffs):
-            logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
-
+            #logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
 
 
 if __name__ == '__main__':
@@ -227,19 +224,19 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=5)
    
-    if args.load:
-        model.load_state_dict(torch.load(args.load))
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
-            start_epoch = checkpoint['epoch']
+            start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            end_epoch = state_epoch + 1000
             model.load_state_dict(checkpoint['state_dict'])
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+    else:
+        start_epoch = 0
+        start_step = 0
 
     train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, 'train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, 'eval')
@@ -278,4 +275,4 @@ if __name__ == '__main__':
     #bg, ex, he, ma, se
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1.]).to(device))
     
-    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs)
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
