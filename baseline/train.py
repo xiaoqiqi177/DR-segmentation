@@ -32,8 +32,6 @@ parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
                       type='int', help='batch size')
 parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
                       type='float', help='learning rate')
-parser.add_option('-c', '--load', dest='load',
-                      default=False, help='load file model')
 parser.add_option('-r', '--resume', dest='resume',
                       default=False, help='resume file model')
 parser.add_option('-p', '--log-dir', dest='logdir', default='drlog',
@@ -64,36 +62,37 @@ def eval_model(model, eval_loader, criterion):
     eval_tot = len(eval_loader)
     dice_coeffs = np.zeros(4)
     eval_loss_ce = 0.
-    for inputs, true_masks in eval_loader:
-        inputs = inputs.to(device=device, dtype=torch.float)
-        true_masks = true_masks.to(device=device, dtype=torch.float)
-        
-        if net_name == 'unet':
-            masks_pred = model(inputs)
-        elif net_name == 'hednet':
-            masks_pred = model(inputs)[-1]
-        
-        masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
-        masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
-        true_masks_indices = torch.argmax(true_masks, 1)
-        true_masks_flat = true_masks_indices.reshape(-1)
-        loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-        eval_loss_ce += loss_ce
 
-        _, mask_indices = torch.max(masks_pred, 1)
-        _, true_masks_indices= torch.max(true_masks, 1)
-        mask_size_bg = torch.sum(true_masks_indices == 0)
-        mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0)
-        if mask_size_fg > 0: 
-            correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0)).float()) / (mask_size_fg.float())
-            fg_tot += correct_fg.item()
-        if mask_size_bg > 0:
-            correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
-            bg_tot += correct_bg.item()
+    with torch.set_grad_enabled(False):
+        for inputs, true_masks in eval_loader:
+            inputs = inputs.to(device=device, dtype=torch.float)
+            true_masks = true_masks.to(device=device, dtype=torch.float)
+            if net_name == 'unet':
+                masks_pred = model(inputs)
+            elif net_name == 'hednet':
+                masks_pred = model(inputs)[-1]
         
-        masks_pred_softmax = softmax(masks_pred) 
-        dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
-    return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+            masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
+            masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
+            true_masks_indices = torch.argmax(true_masks, 1)
+            true_masks_flat = true_masks_indices.reshape(-1)
+            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+            eval_loss_ce += loss_ce
+
+            _, mask_indices = torch.max(masks_pred, 1)
+            _, true_masks_indices = torch.max(true_masks, 1)
+            mask_size_bg = torch.sum(true_masks_indices == 0)
+            mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0)
+            if mask_size_fg > 0: 
+                correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0)).float()) / (mask_size_fg.float())
+                fg_tot += correct_fg.item()
+            if mask_size_bg > 0:
+                correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
+                bg_tot += correct_bg.item()
+        
+            masks_pred_softmax = softmax(masks_pred) 
+            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
+        return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot, eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -137,10 +136,10 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     
     return images_batch
 
-def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5):
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
-    tot_step_count = 8500
-    for epoch in range(170, num_epochs):
+    tot_step_count = start_step
+    for epoch in range(start_epoch, start_epoch+num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
         scheduler.step()
         model.train()
@@ -190,24 +189,10 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             tot_step_count += 1
         
         # Traning logs
+        logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
         for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
             logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
-        #logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
-        
-        if not os.path.exists(dir_checkpoint):
-            os.mkdir(dir_checkpoint)
-        if (epoch + 1) % 1 == 0:
-            state = {
-                    'epoch': epoch,
-                    'step': tot_step_count,
-                    'state_dict': model.state_dict(),
-                    'optimizer': optimizer.state_dict()
-                    }
-            torch.save(state,
-                        os.path.join(dir_checkpoint, 'model_{}.pth.tar'.format(epoch + 1)))
-            logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
-            print('Checkpoint {} saved !'.format(epoch + 1))
         
         # Validation logs
         bg_acc, fg_acc, dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
@@ -218,6 +203,19 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         for lesion, coeff in zip(lesions, dice_coeffs):
             logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
 
+        if not os.path.exists(dir_checkpoint):
+            os.mkdir(dir_checkpoint)
+        if (epoch + 1) % 20 == 0:
+            state = {
+                    'epoch': epoch,
+                    'step': tot_step_count,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict()
+                    }
+            torch.save(state,
+                        os.path.join(dir_checkpoint, 'model_{}.pth.tar'.format(epoch + 1)))
+            print('Checkpoint {} saved !'.format(epoch + 1))
+            #logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
 
 
 if __name__ == '__main__':
@@ -227,19 +225,19 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=5)
    
-    if args.load:
-        model.load_state_dict(torch.load(args.load))
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
-            start_epoch = checkpoint['epoch']
+            start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            end_epoch = state_epoch + 1000
             model.load_state_dict(checkpoint['state_dict'])
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+    else:
+        start_epoch = 0
+        start_step = 0
 
     train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, 'train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, 'eval')
@@ -278,4 +276,4 @@ if __name__ == '__main__':
     #bg, ex, he, ma, se
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1.]).to(device))
     
-    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs)
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)

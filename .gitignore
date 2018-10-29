@@ -1,3 +1,4 @@
 *tfevents*
 *.pth
 *.pyc
+*.pth.tar
