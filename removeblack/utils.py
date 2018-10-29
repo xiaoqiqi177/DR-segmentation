@@ -46,7 +46,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
         else:
             image_paths.extend(each[train_number+eval_number:])
     mask_path= os.path.join(image_dir, 'GroundTruth')
-    lesions = ['EX', 'HE', 'MA', 'SE']
+    lesions = ['EX', 'HE', 'MA', 'SE', 'MASK']
     for image_path in image_paths:
         paths = []
         name = os.path.split(image_path)[1].split('.')[0]
