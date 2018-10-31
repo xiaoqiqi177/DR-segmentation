@@ -24,3 +24,4 @@ def dice_coeff(input, target):
     union = torch.sum(input_flat, 2) + torch.sum(target_flat, 2) + eps
     t = (2 * inter.float() + eps) / union.float()
     return torch.mean(t, 0).to(device='cpu').numpy()
+
