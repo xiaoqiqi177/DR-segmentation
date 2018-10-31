@@ -144,7 +144,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
     model.to(device=device)
     tot_step_count = start_step
     for epoch in range(start_epoch, start_epoch+num_epochs):
-        print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
+        print('Starting epoch {}/{}.'.format(epoch + 1, start_epoch+num_epochs))
         scheduler.step()
         model.train()
         epoch_loss_ce = 0

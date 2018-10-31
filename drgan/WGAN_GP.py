@@ -2,20 +2,20 @@ import utils, torch, time, os, pickle
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
+from torch.autograd import grad
 from dataloader import dataloader
 
 class generator(nn.Module):
     # Network Architecture is exactly same as in infoGAN (https://arxiv.org/abs/1606.03657)
     # Architecture : FC1024_BR-FC7x7x128_BR-(64)4dc2s_BR-(1)4dc2s_S
-    def __init__(self, input_dim=100, output_dim=1, input_size=32, class_num=10):
+    def __init__(self, input_dim=100, output_dim=1, input_size=32):
         super(generator, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.input_size = input_size
-        self.class_num = class_num
 
         self.fc = nn.Sequential(
-            nn.Linear(self.input_dim + self.class_num, 1024),
+            nn.Linear(self.input_dim, 1024),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
             nn.Linear(1024, 128 * (self.input_size // 4) * (self.input_size // 4)),
@@ -31,9 +31,8 @@ class generator(nn.Module):
         )
         utils.initialize_weights(self)
 
-    def forward(self, input, label):
-        x = torch.cat([input, label], 1)
-        x = self.fc(x)
+    def forward(self, input):
+        x = self.fc(input)
         x = x.view(-1, 128, (self.input_size // 4), (self.input_size // 4))
         x = self.deconv(x)
 
@@ -42,15 +41,14 @@ class generator(nn.Module):
 class discriminator(nn.Module):
     # Network Architecture is exactly same as in infoGAN (https://arxiv.org/abs/1606.03657)
     # Architecture : (64)4c2s-(128)4c2s_BL-FC1024_BL-FC1_S
-    def __init__(self, input_dim=1, output_dim=1, input_size=32, class_num=10):
+    def __init__(self, input_dim=1, output_dim=1, input_size=32):
         super(discriminator, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.input_size = input_size
-        self.class_num = class_num
 
         self.conv = nn.Sequential(
-            nn.Conv2d(self.input_dim + self.class_num, 64, 4, 2, 1),
+            nn.Conv2d(self.input_dim, 64, 4, 2, 1),
             nn.LeakyReLU(0.2),
             nn.Conv2d(64, 128, 4, 2, 1),
             nn.BatchNorm2d(128),
@@ -61,22 +59,22 @@ class discriminator(nn.Module):
             nn.BatchNorm1d(1024),
             nn.LeakyReLU(0.2),
             nn.Linear(1024, self.output_dim),
-            nn.Sigmoid(),
+            # nn.Sigmoid(),
         )
         utils.initialize_weights(self)
 
-    def forward(self, input, label):
-        x = torch.cat([input, label], 1)
-        x = self.conv(x)
+    def forward(self, input):
+        x = self.conv(input)
         x = x.view(-1, 128 * (self.input_size // 4) * (self.input_size // 4))
         x = self.fc(x)
 
         return x
 
-class CGAN(object):
+class WGAN_GP(object):
     def __init__(self, args):
         # parameters
         self.epoch = args.epoch
+        self.sample_num = 100
         self.batch_size = args.batch_size
         self.save_dir = args.save_dir
         self.result_dir = args.result_dir
@@ -86,49 +84,32 @@ class CGAN(object):
         self.model_name = args.gan_type
         self.input_size = args.input_size
         self.z_dim = 62
-        self.class_num = 10
-        self.sample_num = self.class_num ** 2
+        self.lambda_ = 10
+        self.n_critic = 5               # the number of iterations of the critic per generator iteration
 
         # load dataset
         self.data_loader = dataloader(self.dataset, self.input_size, self.batch_size)
         data = self.data_loader.__iter__().__next__()[0]
 
         # networks init
-        self.G = generator(input_dim=self.z_dim, output_dim=data.shape[1], input_size=self.input_size, class_num=self.class_num)
-        self.D = discriminator(input_dim=data.shape[1], output_dim=1, input_size=self.input_size, class_num=self.class_num)
+        self.G = generator(input_dim=self.z_dim, output_dim=data.shape[1], input_size=self.input_size)
+        self.D = discriminator(input_dim=data.shape[1], output_dim=1, input_size=self.input_size)
         self.G_optimizer = optim.Adam(self.G.parameters(), lr=args.lrG, betas=(args.beta1, args.beta2))
         self.D_optimizer = optim.Adam(self.D.parameters(), lr=args.lrD, betas=(args.beta1, args.beta2))
 
         if self.gpu_mode:
             self.G.cuda()
             self.D.cuda()
-            self.BCE_loss = nn.BCELoss().cuda()
-        else:
-            self.BCE_loss = nn.BCELoss()
 
         print('---------- Networks architecture -------------')
         utils.print_network(self.G)
         utils.print_network(self.D)
         print('-----------------------------------------------')
 
-        # fixed noise & condition
-        self.sample_z_ = torch.zeros((self.sample_num, self.z_dim))
-        for i in range(self.class_num):
-            self.sample_z_[i*self.class_num] = torch.rand(1, self.z_dim)
-            for j in range(1, self.class_num):
-                self.sample_z_[i*self.class_num + j] = self.sample_z_[i*self.class_num]
-
-        temp = torch.zeros((self.class_num, 1))
-        for i in range(self.class_num):
-            temp[i, 0] = i
-
-        temp_y = torch.zeros((self.sample_num, 1))
-        for i in range(self.class_num):
-            temp_y[i*self.class_num: (i+1)*self.class_num] = temp
-
-        self.sample_y_ = torch.zeros((self.sample_num, self.class_num)).scatter_(1, temp_y.type(torch.LongTensor), 1)
+        # fixed noise
+        self.sample_z_ = torch.rand((self.batch_size, self.z_dim))
         if self.gpu_mode:
-            self.sample_z_, self.sample_y_ = self.sample_z_.cuda(), self.sample_y_.cuda()
+            self.sample_z_ = self.sample_z_.cuda()
 
     def train(self):
         self.train_hist = {}
@@ -147,42 +128,60 @@ class CGAN(object):
         for epoch in range(self.epoch):
             self.G.train()
             epoch_start_time = time.time()
-            for iter, (x_, y_) in enumerate(self.data_loader):
+            for iter, (x_, _) in enumerate(self.data_loader):
                 if iter == self.data_loader.dataset.__len__() // self.batch_size:
                     break
 
                 z_ = torch.rand((self.batch_size, self.z_dim))
-                y_vec_ = torch.zeros((self.batch_size, self.class_num)).scatter_(1, y_.type(torch.LongTensor).unsqueeze(1), 1)
-                y_fill_ = y_vec_.unsqueeze(2).unsqueeze(3).expand(self.batch_size, self.class_num, self.input_size, self.input_size)
                 if self.gpu_mode:
-                    x_, z_, y_vec_, y_fill_ = x_.cuda(), z_.cuda(), y_vec_.cuda(), y_fill_.cuda()
+                    x_, z_ = x_.cuda(), z_.cuda()
 
                 # update D network
                 self.D_optimizer.zero_grad()
 
-                D_real = self.D(x_, y_fill_)
-                D_real_loss = self.BCE_loss(D_real, self.y_real_)
+                D_real = self.D(x_)
+                D_real_loss = -torch.mean(D_real)
 
-                G_ = self.G(z_, y_vec_)
-                D_fake = self.D(G_, y_fill_)
-                D_fake_loss = self.BCE_loss(D_fake, self.y_fake_)
+                G_ = self.G(z_)
+                D_fake = self.D(G_)
+                D_fake_loss = torch.mean(D_fake)
 
-                D_loss = D_real_loss + D_fake_loss
-                self.train_hist['D_loss'].append(D_loss.item())
+                # gradient penalty
+                alpha = torch.rand((self.batch_size, 1, 1, 1))
+                if self.gpu_mode:
+                    alpha = alpha.cuda()
+
+                x_hat = alpha * x_.data + (1 - alpha) * G_.data
+                x_hat.requires_grad = True
+
+                pred_hat = self.D(x_hat)
+                if self.gpu_mode:
+                    gradients = grad(outputs=pred_hat, inputs=x_hat, grad_outputs=torch.ones(pred_hat.size()).cuda(),
+                                 create_graph=True, retain_graph=True, only_inputs=True)[0]
+                else:
+                    gradients = grad(outputs=pred_hat, inputs=x_hat, grad_outputs=torch.ones(pred_hat.size()),
+                                     create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+                gradient_penalty = self.lambda_ * ((gradients.view(gradients.size()[0], -1).norm(2, 1) - 1) ** 2).mean()
+
+                D_loss = D_real_loss + D_fake_loss + gradient_penalty
 
                 D_loss.backward()
                 self.D_optimizer.step()
 
-                # update G network
-                self.G_optimizer.zero_grad()
+                if ((iter+1) % self.n_critic) == 0:
+                    # update G network
+                    self.G_optimizer.zero_grad()
 
-                G_ = self.G(z_, y_vec_)
-                D_fake = self.D(G_, y_fill_)
-                G_loss = self.BCE_loss(D_fake, self.y_real_)
-                self.train_hist['G_loss'].append(G_loss.item())
+                    G_ = self.G(z_)
+                    D_fake = self.D(G_)
+                    G_loss = -torch.mean(D_fake)
+                    self.train_hist['G_loss'].append(G_loss.item())
 
-                G_loss.backward()
-                self.G_optimizer.step()
+                    G_loss.backward()
+                    self.G_optimizer.step()
+
+                    self.train_hist['D_loss'].append(D_loss.item())
 
                 if ((iter + 1) % 100) == 0:
                     print("Epoch: [%2d] [%4d/%4d] D_loss: %.8f, G_loss: %.8f" %
@@ -208,19 +207,19 @@ class CGAN(object):
         if not os.path.exists(self.result_dir + '/' + self.dataset + '/' + self.model_name):
             os.makedirs(self.result_dir + '/' + self.dataset + '/' + self.model_name)
 
-        image_frame_dim = int(np.floor(np.sqrt(self.sample_num)))
+        tot_num_samples = min(self.sample_num, self.batch_size)
+        image_frame_dim = int(np.floor(np.sqrt(tot_num_samples)))
 
         if fix:
             """ fixed noise """
-            samples = self.G(self.sample_z_, self.sample_y_)
+            samples = self.G(self.sample_z_)
         else:
             """ random noise """
-            sample_y_ = torch.zeros(self.batch_size, self.class_num).scatter_(1, torch.randint(0, self.class_num - 1, (self.batch_size, 1)).type(torch.LongTensor), 1)
             sample_z_ = torch.rand((self.batch_size, self.z_dim))
             if self.gpu_mode:
-                sample_z_, sample_y_ = sample_z_.cuda(), sample_y_.cuda()
+                sample_z_ = sample_z_.cuda()
 
-            samples = self.G(sample_z_, sample_y_)
+            samples = self.G(sample_z_)
 
         if self.gpu_mode:
             samples = samples.cpu().data.numpy().transpose(0, 2, 3, 1)

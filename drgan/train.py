@@ -85,16 +85,16 @@ def eval_model(model, eval_loader, criterion):
             _, mask_indices = torch.max(masks_pred, 1)
             _, true_masks_indices = torch.max(true_masks, 1)
             mask_size_bg = torch.sum(true_masks_indices == 0)
-            mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0)
+            mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0) - torch.sum(true_masks_indices==5)
             if mask_size_fg > 0: 
-                correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0)).float()) / (mask_size_fg.float())
+                correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0) * (true_masks_indices<5)).float()) / (mask_size_fg.float())
                 fg_tot += correct_fg.item()
             if mask_size_bg > 0:
                 correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
                 bg_tot += correct_bg.item()
         
             masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
+            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
         return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot, eval_loss_ce / eval_tot
 
 def denormalize(inputs):
@@ -144,7 +144,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
     model.to(device=device)
     tot_step_count = start_step
     for epoch in range(start_epoch, start_epoch+num_epochs):
-        print('Starting epoch {}/{}.'.format(epoch + 1, start_epoch+num_epochs))
+        print('Starting epoch {}/{}.'.format(epoch + 1, num_epochs))
         scheduler.step()
         model.train()
         epoch_loss_ce = 0
@@ -167,7 +167,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             masks_pred_softmax = softmax(masks_pred) 
-            losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
+            losses_dice = dice_loss(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
            
             
             # Save images
@@ -226,9 +226,9 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
 if __name__ == '__main__':
 
     if net_name == 'unet': 
-        model = UNet(n_channels=3, n_classes=5)
+        model = UNet(n_channels=3, n_classes=6)
     else:
-        model = HNNNet(pretrained=True, class_number=5)
+        model = HNNNet(pretrained=True, class_number=6)
    
     if args.resume:
         if os.path.isfile(args.resume):
@@ -279,6 +279,6 @@ if __name__ == '__main__':
                               weight_decay=0.0005)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
     #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1.]).to(device))
+    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1., 0.1]).to(device))
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
