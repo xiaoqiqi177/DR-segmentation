@@ -24,14 +24,12 @@ def clahe_gridsize(image_path, denoise=False, verbose=False, cliplimit=None, gri
     lab_planes = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=cliplimit,tileGridSize=(gridsize,gridsize))
     lab_planes[0] = clahe.apply(lab_planes[0])
-    #lab_planes[1] = clahe.apply(lab_planes[1])
-    #lab_planes[2] = clahe.apply(lab_planes[2])
     lab = cv2.merge(lab_planes)
     bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
     if denoise:
         bgr = cv2.fastNlMeansDenoisingColored(bgr, None, 10, 10, 1, 3)
-        #bgr = cv2.bilateralFilter(bgr, 5, 1, 1)
+        bgr = cv2.bilateralFilter(bgr, 5, 1, 1)
 
     if verbose:
         cv2.imshow("test", bgr)

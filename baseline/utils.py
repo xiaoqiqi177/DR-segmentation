@@ -17,10 +17,10 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             apparent_ori = glob.glob(os.path.join(image_dir, 'ApparentRetinopathy/*.jpg'))
             noapparent_ori = glob.glob(os.path.join(image_dir, 'NoApparentRetinopathy/*.jpg'))
             for img_path in apparent_ori:
-                clahe_img = clahe_gridsize(img_path, denoise=False, verbose=False, cliplimit=limit, gridsize=grid_size)
+                clahe_img = clahe_gridsize(img_path, denoise=True, verbose=False, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'ApparentRetinopathy_CLAHE', os.path.split(img_path)[-1]), clahe_img)
             for img_path in noapparent_ori:
-                clahe_img = clahe_gridsize(img_path, denoise=False, verbose=False, cliplimit=limit, gridsize=grid_size)
+                clahe_img = clahe_gridsize(img_path, denoise=True, verbose=False, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'NoApparentRetinopathy_CLAHE', os.path.split(img_path)[-1]), clahe_img)
         apparent = glob.glob(os.path.join(image_dir, 'ApparentRetinopathy_CLAHE/*.jpg'))
         noapparent = glob.glob(os.path.join(image_dir, 'NoApparentRetinopathy_CLAHE/*.jpg'))

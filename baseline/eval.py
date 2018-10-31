@@ -74,11 +74,11 @@ def eval_model(model, eval_loader):
         
             masks_pred_softmax = softmax(masks_pred)
             masks_max, _ = torch.max(masks_pred_softmax, 1)
-            masks_soft = masks_pred_softmax[:, 1:-1, :, :]
-            masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:-1, :, :]
-            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :])
-            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :])
-            images_batch = generate_log_images_full(inputs, true_masks[:, 1:-1], masks_soft, masks_hard) 
+            masks_soft = masks_pred_softmax[:, 1:, :, :]
+            masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:, :, :]
+            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:, :, :])
+            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:, :, :])
+            images_batch = generate_log_images_full(inputs, true_masks[:, 1:], masks_soft, masks_hard) 
             images_batch = images_batch.to("cpu").numpy()
             vis_images.extend(images_batch)     
     return dice_coeffs_soft / eval_tot, dice_coeffs_hard / eval_tot, vis_images
@@ -121,9 +121,9 @@ def generate_log_images_full(inputs, true_masks, masks_soft, masks_hard):
 if __name__ == '__main__':
 
     if net_name == 'unet': 
-        model = UNet(n_channels=3, n_classes=6)
+        model = UNet(n_channels=3, n_classes=5)
     else:
-        model = HNNNet(pretrained=True, class_number=6)
+        model = HNNNet(pretrained=True, class_number=5)
     
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
@@ -148,4 +148,5 @@ if __name__ == '__main__':
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
                                 
     dice_coeffs_soft, dice_coeffs_hard, vis_images = eval_model(model, eval_loader)
+    print(dice_coeffs_soft, dice_coeffs_hard)
     #logger.image_summary('eval_images', vis_images, step=0)

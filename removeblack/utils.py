@@ -16,11 +16,32 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             os.mkdir(os.path.join(image_dir, 'NoApparentRetinopathy_CLAHE'))
             apparent_ori = glob.glob(os.path.join(image_dir, 'ApparentRetinopathy/*.jpg'))
             noapparent_ori = glob.glob(os.path.join(image_dir, 'NoApparentRetinopathy/*.jpg'))
+            apparent_ori.sort()
+            noapparent_ori.sort()
+            
+            # mean brightness.
+            meanbright = 0.
+            for img_path in apparent_ori + noapparent_ori:
+                img_name = os.path.split(img_path)[-1].split('.')[0]
+                mask_path = os.path.join(image_dir, 'GroundTruth', 'MASK', img_name+'_MASK.tif')
+                gray = cv2.imread(img_path, 0)
+                mask_img = cv2.imread(mask_path, 0)
+                brightness = gray.sum() / (mask_img.shape[0] * mask_img.shape[1] - mask_img.sum() / 255.)
+                meanbright += brightness
+            meanbright /= len(apparent_ori + noapparent_ori)
+            
+            # preprocess for apparent.
             for img_path in apparent_ori:
-                clahe_img = clahe_gridsize(img_path, denoise=False, verbose=False, cliplimit=limit, gridsize=grid_size)
+                img_name = os.path.split(img_path)[-1].split('.')[0]
+                mask_path = os.path.join(image_dir, 'GroundTruth', 'MASK', img_name+'_MASK.tif')
+                clahe_img = clahe_gridsize(img_path, mask_path, denoise=True, verbose=False, brightnessbalance=meanbright, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'ApparentRetinopathy_CLAHE', os.path.split(img_path)[-1]), clahe_img)
+            
+            # preprocess for noapparent.
             for img_path in noapparent_ori:
-                clahe_img = clahe_gridsize(img_path, denoise=False, verbose=False, cliplimit=limit, gridsize=grid_size)
+                img_name = os.path.split(img_path)[-1].split('.')[0]
+                mask_path = os.path.join(image_dir, 'GroundTruth', 'MASK', img_name+'_MASK.tif')
+                clahe_img = clahe_gridsize(img_path, mask_path, denoise=True, verbose=False, brightnessbalance=meanbright, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'NoApparentRetinopathy_CLAHE', os.path.split(img_path)[-1]), clahe_img)
         apparent = glob.glob(os.path.join(image_dir, 'ApparentRetinopathy_CLAHE/*.jpg'))
         noapparent = glob.glob(os.path.join(image_dir, 'NoApparentRetinopathy_CLAHE/*.jpg'))
