@@ -145,6 +145,12 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     
     return images_batch
 
+def image_to_patch(image, patch_size):
+    bs, channel, h, w = image.shape
+    return (image.reshape((bs, channel, h//patch_size, patch_size, w//patch_size, patch_size))
+            .permute(2, 4, 0, 1, 3, 5)
+            .reshape((-1, channel, patch_size, patch_size)))
+
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0, dnet=None):
     model.to(device=device)
     if dnet:
@@ -177,7 +183,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            masks_pred_softmax = softmax(masks_pred) 
+            masks_pred_softmax = softmax(masks_pred)
             losses_dice = dice_loss(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
            
             # Save images
@@ -200,12 +206,12 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             if dnet:
                 dnet.train()
                 input_real = torch.cat((inputs, true_masks[:, 1:-1, :, :]), 1)
-                bs, channel, h, w = input_real.shape
-                input_real = torch.reshape(torch.reshape(input_real, (bs, channel, h//patch_size, patch_size, w//patch_size, patch_size)).permute(2, 4, 0, 1, 3, 5), (-1, channel, patch_size, patch_size))
+
+                input_real = image_to_patch(input_real, patch_size)
                 masks_max, _ = torch.max(masks_pred_softmax, 1)
                 masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)
                 input_fake = torch.cat((inputs, masks_hard[:, 1:-1, :, :]), 1)
-                input_fake = torch.reshape(torch.reshape(input_fake, (bs, channel, h//patch_size, patch_size, w//patch_size, patch_size)).permute(2, 4, 0, 1, 3, 5), (-1, channel, patch_size, patch_size))
+                input_fake = image_to_patch(input_fake, patch_size)
                 d_real = dnet(input_real)
                 d_fake = dnet(input_fake)
                 d_real_loss = -torch.mean(d_real)
