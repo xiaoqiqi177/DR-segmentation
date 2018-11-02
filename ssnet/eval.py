@@ -148,4 +148,5 @@ if __name__ == '__main__':
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
                                 
     dice_coeffs_soft, dice_coeffs_hard, vis_images = eval_model(model, eval_loader)
+    print(dice_coeffs_soft, dice_coeffs_hard)
     #logger.image_summary('eval_images', vis_images, step=0)

@@ -54,7 +54,7 @@ logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
 lesion_dice_weights = [0., 0., 0., 0.]
-d_weight = 1.
+d_weight = 0.1
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
@@ -250,7 +250,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             state = {
                     'epoch': epoch,
                     'step': tot_step_count,
-                    'state_dict': model.state_dict(),
+                    'g_state_dict': model.state_dict(),
+                    'd_state_dict': dnet.state_dict(),
                     'optimizer': optimizer.state_dict()
                     }
             torch.save(state,
@@ -274,7 +275,8 @@ if __name__ == '__main__':
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['g_state_dict'])
+            dnet.load_state_dict(checkpoint['d_state_dict'])
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))

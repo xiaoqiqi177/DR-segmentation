@@ -18,8 +18,8 @@ def initialize_weights(net):
 
 
 train_ratio = 0.7
-eval_ratio = 0.2
-test_ratio = 0.1
+eval_ratio = 0.3
+test_ratio = 0.
 
 def get_images(image_dir, preprocess=False, phase='train', healthy_included=True):
     if preprocess:

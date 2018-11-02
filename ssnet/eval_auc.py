@@ -22,6 +22,9 @@ from logger import Logger
 import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score, average_precision_score
+#from plot_roc import plot_roc
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 parser = OptionParser()
@@ -46,6 +49,94 @@ lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
 image_dir = '/home/qiqix/Sub1'
 
+def _evaluate_predictions(y_true, y_pred, metric_fn):
+    if isinstance(y_true, list):
+        return [metric_fn(yti, ypi) for yti, ypi in zip(y_true, y_pred)]
+    return metric_fn(y_true, y_pred)
+
+
+def _evaluate_metric(y_true, y_pred, metric, output_dir):
+    if metric == 'AUC':
+        #plot_roc('ROC curve on image-level', os.path.join(output_dir, 'roc.png'), y_pred, y_true) 
+        return _evaluate_predictions(y_true, y_pred, roc_auc_score)
+    if metric == 'AP':
+        return _evaluate_predictions(y_true, y_pred, average_precision_score)
+    raise ValueError('Unknown metric. Given {} but only know how to compute AUC and AP')
+
+
+def evaluate_auc(y_true, y_pred, output_dir, metrics=['AUC']):
+    if y_true is None or y_pred is None:
+        return [], ([], [])
+    results = []
+    for metric in metrics:
+        results.append(_evaluate_metric(y_true, y_pred, metric, output_dir))
+    return results
+
+def plot_precision_recall(precisions, recalls, title, savefile):
+    lt.figure()
+    plt.step(recalls, precisions, color='b', alpha=0.2,
+         where='post')
+    plt.fill_between(recalls, precisions, step='post', alpha=0.2,
+                 color='b')
+
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.ylim([0.0, 1.05])
+    plt.xlim([0.0, 1.0])
+    plt.title('{}'.format(title))
+    #plt.title('{}: AP={}'.format(title, average_precision))
+    plt.savefig(savefile)
+
+def plot_precision_recall_all(precisions_all, recalls_all, titles, savefile):
+    colors = ['navy', 'turquoise', 'darkorange', 'cornflowerblue', 'teal']
+    plt.figure(figsize=(7, 8))
+    f_scores = np.linspace(0.2, 0.8, num=4)
+    lines = []
+    labels = []
+    for f_score in f_scores:
+        x = np.linspace(0.01, 1)
+        y = f_score * x / (2 * x - f_score)
+        l, = plt.plot(x[y >= 0], y[y >= 0], color='gray', alpha=0.2)
+        plt.annotate('f1={0:0.1f}'.format(f_score), xy=(0.9, y[45] + 0.02))
+
+        lines.append(l)
+    labels.append('iso-f1 curves')
+
+    n_number = len(precisions_all)
+    for i in range(n_number):
+        color = colors[i]
+        l, = plt.plot(recalls_all[i], precisions_all[i], color=color, lw=2)
+        lines.append(l)
+        labels.append('Precision-recall for {}'.format(titles[i]))
+    fig = plt.gcf()
+    fig.subplots_adjust(bottom=0.25)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall curves of different experiments')
+    plt.legend(lines, labels, loc=(0, -.38), prop=dict(size=14))
+    plt.savefig(savefile)
+
+def get_precision_recall(pred_masks, true_masks):
+    precisions = []
+    recalls = []
+    batch_size = pred_masks.shape[0]
+    class_no = pred_masks.shape[1]
+    for threshold in range(21):
+        threshold = threshold / 20.
+        pred_masks_hard = (pred_masks > threshold).to(dtype=torch.float)
+        pred_flat = pred_masks_hard.view(batch_size, class_no, -1)
+        true_flat = true_masks.view(batch_size, class_no, -1)
+        tp = torch.sum(pred_flat * true_flat, 2)
+        predp = torch.sum(pred_flat, 2)
+        truep = torch.sum(true_flat, 2)
+        precisions.append(np.array(tp / truep))
+        recalls.append(np.array(tp / predp))
+    precisions = np.transpose(np.array(precisions), (1, 2, 0))
+    recalls = np.transpose(np.array(recalls), (1, 2, 0))
+    return precisions, recalls
+
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader):
     model.to(device=device)
@@ -54,6 +145,8 @@ def eval_model(model, eval_loader):
     dice_coeffs_soft = np.zeros(4)
     dice_coeffs_hard = np.zeros(4)
     vis_images = []
+    precision_all = []
+    recall_all = []
     with torch.set_grad_enabled(False):
         for inputs, true_masks in tqdm(eval_loader):
             inputs = inputs.to(device=device, dtype=torch.float)
@@ -78,10 +171,13 @@ def eval_model(model, eval_loader):
             masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:-1, :, :]
             dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :])
             dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :])
+            precisions, recalls = get_precision_recall(masks_soft, true_masks[:, 1:-1, :, :])
+            precision_all.extend(precisions)
+            recall_all.extend(recalls)
             images_batch = generate_log_images_full(inputs, true_masks[:, 1:-1], masks_soft, masks_hard) 
             images_batch = images_batch.to("cpu").numpy()
             vis_images.extend(images_batch)     
-    return dice_coeffs_soft / eval_tot, dice_coeffs_hard / eval_tot, vis_images
+    return dice_coeffs_soft / eval_tot, dice_coeffs_hard / eval_tot, vis_images, np.mean(np.array(precision_all), 0), np.mean(np.array(recall_all), 0)
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -128,7 +224,7 @@ if __name__ == '__main__':
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
-        model.load_state_dict(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint['g_state_dict'])
         print('Model loaded from {}'.format(args.model))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
@@ -147,6 +243,9 @@ if __name__ == '__main__':
                     ]))
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
                                 
-    dice_coeffs_soft, dice_coeffs_hard, vis_images = eval_model(model, eval_loader)
+    dice_coeffs_soft, dice_coeffs_hard, vis_images, precisions, recalls = eval_model(model, eval_loader)
     print(dice_coeffs_soft, dice_coeffs_hard)
+    
+    plot_precision_recall_all(precisions, recalls, lesions, './recall_precision.png')
+
     #logger.image_summary('eval_images', vis_images, step=0)
