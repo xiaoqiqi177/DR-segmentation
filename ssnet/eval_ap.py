@@ -23,8 +23,7 @@ import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score, average_precision_score
-#from plot_roc import plot_roc
+from sklearn.metrics import precision_recall_curve, average_precision_score
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 parser = OptionParser()
@@ -49,36 +48,12 @@ lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
 image_dir = '/home/qiqix/Sub1'
 
-def _evaluate_predictions(y_true, y_pred, metric_fn):
-    if isinstance(y_true, list):
-        return [metric_fn(yti, ypi) for yti, ypi in zip(y_true, y_pred)]
-    return metric_fn(y_true, y_pred)
-
-
-def _evaluate_metric(y_true, y_pred, metric, output_dir):
-    if metric == 'AUC':
-        #plot_roc('ROC curve on image-level', os.path.join(output_dir, 'roc.png'), y_pred, y_true) 
-        return _evaluate_predictions(y_true, y_pred, roc_auc_score)
-    if metric == 'AP':
-        return _evaluate_predictions(y_true, y_pred, average_precision_score)
-    raise ValueError('Unknown metric. Given {} but only know how to compute AUC and AP')
-
-
-def evaluate_auc(y_true, y_pred, output_dir, metrics=['AUC']):
-    if y_true is None or y_pred is None:
-        return [], ([], [])
-    results = []
-    for metric in metrics:
-        results.append(_evaluate_metric(y_true, y_pred, metric, output_dir))
-    return results
-
 def plot_precision_recall(precisions, recalls, title, savefile):
     lt.figure()
     plt.step(recalls, precisions, color='b', alpha=0.2,
          where='post')
     plt.fill_between(recalls, precisions, step='post', alpha=0.2,
                  color='b')
-
     plt.xlabel('Recall')
     plt.ylabel('Precision')
     plt.ylim([0.0, 1.05])
@@ -87,27 +62,50 @@ def plot_precision_recall(precisions, recalls, title, savefile):
     #plt.title('{}: AP={}'.format(title, average_precision))
     plt.savefig(savefile)
 
+def get_ap(recalls, precisions):
+    idx = 0
+    precision_sum = 0.
+    assert len(recalls) == len(precisions)
+    idx_number = len(recalls)
+    for r in range(11):
+        recall_val = r / 10.
+        while idx < idx_number and recall_val > recalls[idx]:
+            idx += 1
+        # indicates the following precisions are all zero.
+        if idx == idx_number:
+            break
+        if idx == 0:
+            precision_sum += precisions[idx]
+        else:
+            recall1 = recalls[idx-1]
+            recall2 = recalls[idx]
+            ratio1 = (recall_val - recall1) / (recall2 - recall1)
+            ratio2 = 1 - ratio1
+            precision_sum += precisions[idx-1] * ratio1 + precisions[idx] * ratio2
+    return precision_sum / 10.
+
 def plot_precision_recall_all(precisions_all, recalls_all, titles, savefile):
     colors = ['navy', 'turquoise', 'darkorange', 'cornflowerblue', 'teal']
     plt.figure(figsize=(7, 8))
     f_scores = np.linspace(0.2, 0.8, num=4)
     lines = []
     labels = []
+    
+    n_number = len(precisions_all)
+    for i in range(n_number):
+        l, = plt.plot(recalls_all[i], precisions_all[i], color=colors[i], lw=2)
+        ap = get_ap(recalls_all[i], precisions_all[i])
+        lines.append(l)
+        labels.append('Precision-recall for {}; AP = {}'.format(titles[i], ap))
+    
     for f_score in f_scores:
         x = np.linspace(0.01, 1)
         y = f_score * x / (2 * x - f_score)
         l, = plt.plot(x[y >= 0], y[y >= 0], color='gray', alpha=0.2)
         plt.annotate('f1={0:0.1f}'.format(f_score), xy=(0.9, y[45] + 0.02))
-
         lines.append(l)
     labels.append('iso-f1 curves')
 
-    n_number = len(precisions_all)
-    for i in range(n_number):
-        color = colors[i]
-        l, = plt.plot(recalls_all[i], precisions_all[i], color=color, lw=2)
-        lines.append(l)
-        labels.append('Precision-recall for {}'.format(titles[i]))
     fig = plt.gcf()
     fig.subplots_adjust(bottom=0.25)
     plt.xlim([0.0, 1.0])
@@ -119,6 +117,7 @@ def plot_precision_recall_all(precisions_all, recalls_all, titles, savefile):
     plt.savefig(savefile)
 
 def get_precision_recall(pred_masks, true_masks):
+
     precisions = []
     recalls = []
     batch_size = pred_masks.shape[0]
@@ -247,5 +246,4 @@ if __name__ == '__main__':
     print(dice_coeffs_soft, dice_coeffs_hard)
     
     plot_precision_recall_all(precisions, recalls, lesions, './recall_precision.png')
-
     #logger.image_summary('eval_images', vis_images, step=0)
