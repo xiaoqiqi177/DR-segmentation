@@ -793,7 +793,7 @@ class ColorJitter(object):
 
         return transform
 
-    def __call__(self, img):
+    def __call__(self, imgs):
         """
         Args:
             img (PIL Image): Input image.
@@ -803,7 +803,7 @@ class ColorJitter(object):
         """
         transform = self.get_params(self.brightness, self.contrast,
                                     self.saturation, self.hue)
-        return transform(img)
+        return [transform(imgs[0])] + imgs[1:]
 
     def __repr__(self):
         format_string = self.__class__.__name__ + '('

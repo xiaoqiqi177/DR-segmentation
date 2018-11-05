@@ -117,13 +117,13 @@ def plot_precision_recall_all(precisions_all, recalls_all, titles, savefile):
     plt.savefig(savefile)
 
 def get_precision_recall(pred_masks, true_masks):
-
     precisions = []
     recalls = []
     batch_size = pred_masks.shape[0]
     class_no = pred_masks.shape[1]
-    for threshold in range(21):
-        threshold = threshold / 20.
+    INTERNALS = 20
+    for threshold in range(INTERNALS+1):
+        threshold = threshold / INTERNALS
         pred_masks_hard = (pred_masks > threshold).to(dtype=torch.float)
         pred_flat = pred_masks_hard.view(batch_size, class_no, -1)
         true_flat = true_masks.view(batch_size, class_no, -1)
@@ -153,24 +153,24 @@ def eval_model(model, eval_loader):
             bs, _, h, w = inputs.shape
             h_size = (h-1) // image_size + 1
             w_size = (w-1) // image_size + 1
-            masks_pred = torch.zeros(true_masks.shape).to(device=device, dtype=torch.float)
+            masks_pred = torch.zeros(true_masks.shape).to(dtype=torch.float)
             for i in range(h_size):
                 for j in range(w_size):
                     h_max = min(h, (i+1)*image_size)
                     w_max = min(w, (j+1)*image_size)
                     inputs_part = inputs[:,:, i*image_size:h_max, j*image_size:w_max]
                     if net_name == 'unet':
-                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)
+                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part).to("cpu")
                     elif net_name == 'hednet':
-                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)[-1]
+                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)[-1].to("cpu")
         
             masks_pred_softmax = softmax(masks_pred)
             masks_max, _ = torch.max(masks_pred_softmax, 1)
             masks_soft = masks_pred_softmax[:, 1:-1, :, :]
             masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:-1, :, :]
-            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :])
-            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :])
-            precisions, recalls = get_precision_recall(masks_soft, true_masks[:, 1:-1, :, :])
+            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :].to("cpu"))
+            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :].to("cpu"))
+            precisions, recalls = get_precision_recall(masks_soft, true_masks[:, 1:-1, :, :].to("cpu"))
             precision_all.extend(precisions)
             recall_all.extend(recalls)
             images_batch = generate_log_images_full(inputs, true_masks[:, 1:-1], masks_soft, masks_hard) 
@@ -244,6 +244,7 @@ if __name__ == '__main__':
                                 
     dice_coeffs_soft, dice_coeffs_hard, vis_images, precisions, recalls = eval_model(model, eval_loader)
     print(dice_coeffs_soft, dice_coeffs_hard)
-    
+    print(precisions)
+    print(recalls)
     plot_precision_recall_all(precisions, recalls, lesions, './recall_precision.png')
     #logger.image_summary('eval_images', vis_images, step=0)
