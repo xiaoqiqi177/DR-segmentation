@@ -149,18 +149,18 @@ def train_model(model, train_loader, eval_loader, optimizer, scheduler, batch_si
         batch_step_count = 0
         vis_images = []
         for inputs, true_masks in tqdm(train_loader):
-            #if (true_masks == torch.zeros_like(true_masks)).sum() + (true_masks == torch.ones_like(true_masks)*5).sum() == np.ones_like(true_masks).sum():
-            #    continue
             weight = torch.FloatTensor([0, 0, 0, 0, 0, 0])
-            pixel_number = np.ones_like(true_masks).sum()
+            pixel_number = np.ones_like(true_masks[:, 0, :, :]).sum()
             pixel_class_numbers = [None, None, None, None, None, None]
             for idx in range(6):
-                pixel_class_numbers[idx] = (true_masks == torch.ones_like(true_masks)*idx).sum().to(dtype=torch.float)
-
+                pixel_class_numbers[idx] = (true_masks[:, idx, :, :]).sum().to(dtype=torch.float)
             bg_number = pixel_class_numbers[0] + pixel_class_numbers[5]
             fg_number = pixel_number - bg_number
+            if fg_number == 0:
+                continue
             weight_bg = ((pixel_number + 1.) / (bg_number + 1.)).to(dtype=torch.float)
             weight_fg = ((pixel_number + 1.) / (fg_number + 1.)).to(dtype=torch.float)
+            
             bg_sum = 1. / (pixel_class_numbers[0] + 1.) + 1. / (pixel_class_numbers[5] + 1.)
             weight[0] = weight_bg * (1. / (pixel_class_numbers[0] + 1.) / bg_sum)
             weight[5] = weight_bg * (1. / (pixel_class_numbers[5] + 1.) / bg_sum)
@@ -170,7 +170,6 @@ def train_model(model, train_loader, eval_loader, optimizer, scheduler, batch_si
                 fg_sum += 1. / (pixel_class_numbers[idx] + 1.)
             for idx in range(1, 5):
                 weight[idx] = weight_fg * (1. / (pixel_class_numbers[idx] + 1.) / fg_sum)
-            
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
             criterion = nn.CrossEntropyLoss(weight=weight.to(device))
