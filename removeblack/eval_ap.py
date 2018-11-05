@@ -245,7 +245,5 @@ if __name__ == '__main__':
                                 
     dice_coeffs_soft, dice_coeffs_hard, vis_images, precisions, recalls = eval_model(model, eval_loader)
     print(dice_coeffs_soft, dice_coeffs_hard)
-    print(precisions)
-    print(recalls)
     plot_precision_recall_all(precisions, recalls, lesions, './recall_precision.png')
     #logger.image_summary('eval_images', vis_images, step=0)
