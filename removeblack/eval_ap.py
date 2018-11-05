@@ -122,6 +122,7 @@ def get_precision_recall(pred_masks, true_masks):
     batch_size = pred_masks.shape[0]
     class_no = pred_masks.shape[1]
     INTERNALS = 20
+    delta = 0.001
     for threshold in range(INTERNALS+1):
         threshold = threshold / INTERNALS
         pred_masks_hard = (pred_masks > threshold).to(dtype=torch.float)
@@ -130,8 +131,8 @@ def get_precision_recall(pred_masks, true_masks):
         tp = torch.sum(pred_flat * true_flat, 2)
         predp = torch.sum(pred_flat, 2)
         truep = torch.sum(true_flat, 2)
-        precisions.append(np.array(tp / truep))
-        recalls.append(np.array(tp / predp))
+        precisions.append(np.array((tp+delta) / (truep+delta)))
+        recalls.append(np.array((tp+delta) / (predp+delta)))
     precisions = np.transpose(np.array(precisions), (1, 2, 0))
     recalls = np.transpose(np.array(recalls), (1, 2, 0))
     return precisions, recalls
