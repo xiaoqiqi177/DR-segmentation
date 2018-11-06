@@ -54,7 +54,7 @@ lesion_dice_weights = [0., 0., 0., 0.]
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
-image_dir = '/home/qiqix/Sub1'
+image_dir = '/home/yiwei/data/Sub1'
 
 
 softmax = nn.Softmax(1)
@@ -279,6 +279,6 @@ if __name__ == '__main__':
                               weight_decay=0.0005)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
     #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 1., 2., 1., 0.1]).to(device))
+    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 2., 2., 4., 0.1]).to(device))
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
