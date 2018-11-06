@@ -3,6 +3,7 @@ from optparse import OptionParser
 from sklearn.metrics import precision_recall_curve, average_precision_score
 import glob
 import numpy as np
+import matplotlib.pyplot as plt
 
 parser = OptionParser()
 parser.add_option('-p', '--log-dir', dest='logdir', default='eval',
@@ -16,18 +17,16 @@ logdir = args.logdir
 def plot_precision_recall_all(predicted, gt):
     colors = ['navy', 'turquoise', 'darkorange', 'cornflowerblue', 'teal']
     plt.figure(figsize=(7, 8))
-    f_scores = np.linspace(0.2, 0.8, num=4)
     lines = []
     labels = []
-    
     n_number = 4
     for i in range(n_number):
         precision, recall, _ = precision_recall_curve(gt[i], predicted[i])
         l, = plt.plot(recall, precision, color=colors[i], lw=2)
-        ap = average_precision(predicted[i], gt[i])
+        ap = average_precision_score(gt[i], predicted[i])
         lines.append(l)
         labels.append('Precision-recall for {}: AP = {}'.format(titles[i], ap))
-    
+    f_scores = np.linspace(0.2, 0.8, num=4)
     for f_score in f_scores:
         x = np.linspace(0.01, 1)
         y = f_score * x / (2 * x - f_score)
@@ -62,10 +61,9 @@ if __name__ == '__main__':
     true_masks_all = np.array(true_masks_all)
     
     predicted = np.transpose(soft_masks_all, (2, 0, 1, 3, 4))
-    gt = np.transpose(soft_masks_all, (2, 0, 1, 3, 4))
+    predicted = predicted.round(2)
+    gt = np.transpose(true_masks_all, (2, 0, 1, 3, 4))
     predicted = np.reshape(predicted, (predicted.shape[0], -1))
     gt = np.reshape(gt, (gt.shape[0], -1))
     aps = []
-    for i in range(4):
-        aps.append(average_precision_score(predicted, gt))
     plot_precision_recall_all(predicted, gt)
