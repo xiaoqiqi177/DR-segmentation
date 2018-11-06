@@ -3,3 +3,4 @@
 *.pyc
 *.pth.tar
 *.png
+*.npy
