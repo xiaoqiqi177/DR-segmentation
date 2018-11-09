@@ -45,7 +45,7 @@ logger = Logger('./logs', args.logdir)
 net_name = args.netname
 lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
-image_dir = '/home/qiqix/Sub1'
+image_dir = '/home/yiwei/data/Sub1'
 
 logdir = args.logdir
 if not os.path.exists(logdir):
