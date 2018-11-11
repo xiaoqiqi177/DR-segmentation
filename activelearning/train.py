@@ -13,7 +13,8 @@ from torch.optim import lr_scheduler
 from unet import UNet
 from hednet import HNNNet
 from utils import get_images
-from dataset import IDRIDDataset
+from utils_diaret import  get_images_diaretAL
+from dataset import IDRIDDataset, DiaretALDataset, MixedDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
@@ -57,7 +58,8 @@ lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
 image_dir = '/home/qiqix/Sub1'
-
+image_dir = '/home/qiqix/Diaretdb1/resources/images/'
+prediced_dir = './output'
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
@@ -247,13 +249,14 @@ if __name__ == '__main__':
         start_step = 0
 
     train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, phase='train', healthy_included=args.healthyincluded)
+    train_image_paths2, train_mask_paths2, train_predicted_mask_paths2 = get_images_diaretAL(image_dir2, predicted_dir, args.preprocess, phase='train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
 
     if net_name == 'unet':
+        # not using unet, deprecated yet.
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
-                                ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 RandomCrop(image_size),
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
@@ -261,12 +264,19 @@ if __name__ == '__main__':
                                 RandomCrop(image_size),
                     ]))
     elif net_name == 'hednet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset1 = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 RandomCrop(image_size),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
+        train_dataset2 = IDRIDDataset(train_image_paths2, train_mask_paths2, train_predicted_mask_paths2, 4, transform=
+                                Compose([
+                                RandomRotation(rotation_angle),
+                                RandomCrop(image_size),
+                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    ]))
+        train_dataset = MixedDataset(train_dataset1, train_dataset2)
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
                                 Compose([
                                 RandomCrop(image_size),

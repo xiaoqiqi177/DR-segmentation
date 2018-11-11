@@ -39,7 +39,7 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
 net_name = args.netname
 lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
-image_dir = '/home/yiwei/data/Diaretdb1/resources/images/'
+image_dir = '/home/qiqix/Diaretdb1/resources/images/'
 
 if not os.path.exists(args.output):
     os.mkdir(args.output)
@@ -92,7 +92,10 @@ if __name__ == '__main__':
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
-        model.load_state_dict(checkpoint['state_dict'])
+        try:
+            model.load_state_dict(checkpoint['state_dict'])
+        except:
+            model.load_state_dict(checkpoint['g_state_dict'])
         print('Model loaded from {}'.format(args.model))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
