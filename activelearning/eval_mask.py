@@ -11,7 +11,7 @@ from torch import optim
 from unet import UNet
 from hednet import HNNNet
 from utils_diaret import get_images_diaretdb
-from dataset import IDRIDDataset
+from dataset import DiaretDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
@@ -20,28 +20,31 @@ import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import cv2
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 parser = OptionParser()
 parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
                       type='int', help='batch size')
-parser.add_option('-p', '--log-dir', dest='logdir', default='eval',
-                    type='str', help='tensorboard log')
+parser.add_option('-o', '--output-dir', dest='output', default='output', type='str', help='output dir')
 parser.add_option('-m', '--model', dest='model', default='MODEL.pth.tar',
                     type='str', help='models stored')
 parser.add_option('-n', '--net-name', dest='netname', default='unet',
                     type='str', help='net name, unet or hednet')
 parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
                       default=False, help='preprocess input images')
-parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
-                      default=False, help='include healthy images')
 
 (args, _) = parser.parse_args()
 
 net_name = args.netname
 lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
-image_dir = '/home/qiqix/Diaretdb1/resources/images/'
+image_dir = '/home/yiwei/data/Diaretdb1/resources/images/'
+
+if not os.path.exists(args.output):
+    os.mkdir(args.output)
+    for lesion in lesions:
+        os.mkdir(os.path.join(args.output, lesion))
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader):
@@ -50,12 +53,13 @@ def eval_model(model, eval_loader):
     vis_images = []
     
     with torch.set_grad_enabled(False):
-        batch_id = 0
+        image_id = 1
         for inputs in tqdm(eval_loader):
             inputs = inputs.to(device=device, dtype=torch.float)
             bs, _, h, w = inputs.shape
             h_size = (h-1) // image_size + 1
             w_size = (w-1) // image_size + 1
+            masks_pred = torch.zeros((inputs.shape[0], 6, inputs.shape[2], inputs.shape[3])).to(dtype=torch.float)
             for i in range(h_size):
                 for j in range(w_size):
                     h_max = min(h, (i+1)*image_size)
@@ -68,8 +72,13 @@ def eval_model(model, eval_loader):
         
             masks_pred_softmax = softmax(masks_pred)
             masks_soft = masks_pred_softmax[:, 1:-1, :, :]
-            masks_soft = (masks_soft * 255.).to(device=device, dtype=torch.uint8)
-            batch_id += 1
+            masks_soft = np.uint8(masks_soft * 255.)
+            for mask_soft in masks_soft:
+                for lesion_id, lesion in enumerate(lesions):
+                    mask_lesion = mask_soft[lesion_id]
+                    img_path = os.path.join(args.output, lesion, 'image'+str(image_id).zfill(3)+'.png')
+                    cv2.imwrite(img_path, mask_lesion)
+                image_id += 1
     return vis_images
 
 
@@ -89,7 +98,7 @@ if __name__ == '__main__':
         print("=> no checkpoint found at '{}'".format(args.model))
         sys.exit(0)
 
-    eval_image_paths = get_images_diaretdb(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
+    eval_image_paths = get_images_diaretdb(image_dir, args.preprocess)
 
     if net_name == 'unet':
         eval_dataset = DiaretDataset(eval_image_paths, 4, transform=
