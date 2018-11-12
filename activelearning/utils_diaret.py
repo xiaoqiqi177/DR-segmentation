@@ -38,7 +38,7 @@ def get_images_diaretdb(image_dir, preprocess=False):
     return image_paths
 
 def get_images_diaretAL(image_dir, predicted_mask_dir, preprocess=False, phase='train'):
-    image_paths = get_image_diaretdb(image_dir, preprocess)
+    image_paths = get_images_diaretdb(image_dir, preprocess)
     mask_paths = []
     predicted_mask_paths = []
     mask_dir = os.path.join(image_dir, 'ddb1_groundtruth')
@@ -54,6 +54,7 @@ def get_images_diaretAL(image_dir, predicted_mask_dir, preprocess=False, phase='
                 paths.append(candidate_path)
             else:
                 paths.append(None)
+        paths.append(os.path.join(image_dir, 'ddb1_fundusmask', 'fmask1.tif'))
         mask_paths.append(paths)
         # append predicted masks.
         paths = []
@@ -63,6 +64,7 @@ def get_images_diaretAL(image_dir, predicted_mask_dir, preprocess=False, phase='
                 paths.append(candidate_path)
             else:
                 paths.append(None)
+        paths.append(os.path.join(image_dir, 'ddb1_fundusmask', 'fmask1.tif'))
         predicted_mask_paths.append(paths)
     
     return image_paths, mask_paths, predicted_mask_paths

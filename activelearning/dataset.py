@@ -97,11 +97,11 @@ class DiaretALDataset(Dataset):
             mask_paths: paths to the mask images, [[]]
             predicted_mask_paths: paths to predicted mask images, [[]]
         """
-        assert len(images_paths) == len(mask_paths) == len(predicted_mask_paths)
+        assert len(image_paths) == len(mask_paths) == len(predicted_mask_paths)
         self.image_paths = image_paths
-        if self.mask_paths is not None:
+        if mask_paths is not None:
             self.mask_paths = mask_paths
-        if self.predicted_mask_paths is not None:
+        if predicted_mask_paths is not None:
             self.predicted_mask_paths = predicted_mask_paths
         self.class_number = class_number
         self.transform = transform
@@ -109,24 +109,24 @@ class DiaretALDataset(Dataset):
     def __len__(self):
         return len(self.image_paths)
 
-    def pil_loader(image_path):
+    def pil_loader(self, image_path):
         with open(image_path, 'rb') as f:
             img = Image.open(f)
             return img.convert('RGB')
 
-    def cv2_loader(image_path):
+    def cv2_loader(self, image_path):
         return cv2.imread(image_path)
-
+    
     def __getitem__(self, idx):
         image_path = self.image_paths[idx]
-        masks_path4 = self.mask_paths[idx]
-        predicted_mask_path4 = self.predicted_mask_paths
+        mask_path4 = self.mask_paths[idx]
+        predicted_mask_path4 = self.predicted_mask_paths[idx]
         item = self.pil_loader(image_path)
         info = [item]
         w, h = item.size
         if self.mask_paths is not None and self.predicted_mask_paths is not None:
             for i, (mask_path, predicted_mask_path) in enumerate(zip(mask_path4, predicted_mask_path4)):
-                if mask_path is Nne:
+                if mask_path is None:
                     info.append(Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8)))
                 else:
                     maskimg = self.cv2_loader(mask_path)
