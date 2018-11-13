@@ -3,7 +3,9 @@ import os
 import cv2
 import numpy as np
 from utils import get_images
-from dataset import IDRIDDataset
+from utils_diaret import  get_images_diaretAL
+from dataset import IDRIDDataset, DiaretALDataset, MixedDataset
+from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader
 from optparse import OptionParser
@@ -11,39 +13,29 @@ from optparse import OptionParser
 parser = OptionParser()
 parser.add_option('-n', '--net-name', dest='netname', default='unet',
                     type='str', help='net name:unet/hednet')
+parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
+                      default=False, help='preprocess input images')
 (args, _) = parser.parse_args()
 net_name = args.netname
 
-image_dir = '/home/qiqix/Sub1'
-train_image_paths, train_mask_paths = get_images(image_dir, 'train')
-eval_image_paths, eval_mask_paths = get_images(image_dir, 'eval')
+image_dir2 = '/home/qiqix/Diaretdb1/resources/images/'
+predicted_dir = './output'
 
+train_image_paths2, train_mask_paths2, train_predicted_mask_paths2 = get_images_diaretAL(image_dir2, predicted_dir, args.preprocess, phase='train')
+
+rotation_angle = 20
 if True:
     if net_name == 'unet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
-                                Compose([
-                                RandomRotation(20),
-                                RandomCrop(512),
-                    ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
-                                Compose([
-                                RandomCrop(512),
-                    ]))
+        # will not happen.
+        pass
     elif net_name == 'hednet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = DiaretALDataset(train_image_paths2, train_mask_paths2, train_predicted_mask_paths2, 4, transform=
                                 Compose([
-                                RandomRotation(20),
+                                RandomRotation(rotation_angle),
                                 RandomCrop(512),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
-                                Compose([
-                                RandomCrop(512),
-                                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                    ]))
-
 train_loader = DataLoader(train_dataset, 1, shuffle=True)
-eval_loader = DataLoader(eval_dataset, 1, shuffle=False)
 
 for inputs, true_masks in train_loader:
     if net_name == 'unet':
