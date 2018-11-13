@@ -132,6 +132,8 @@ class DiaretALDataset(Dataset):
                     maskimg = self.cv2_loader(mask_path)
                     predicted_maskimg = self.cv2_loader(predicted_mask_path)
                     true_maskimg = maskimg * predicted_maskimg
+                    # (TODO): need to binarize the mask.
+
                     info.append(Image.fromarray(true_maskimg))
         if self.transform:
             info = self.transform(info)
