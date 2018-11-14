@@ -12,9 +12,9 @@ from torch import optim
 from torch.optim import lr_scheduler
 from unet import UNet
 from hednet import HNNNet
-from dnet import DNet
 from utils import get_images
-from dataset import IDRIDDataset
+from utils_diaret import  get_images_diaretAL
+from dataset import IDRIDDataset, DiaretALDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
@@ -45,8 +45,8 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
                       default=False, help='preprocess input images')
 parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
                       default=False, help='include healthy images')
-parser.add_option('-d', '--descriminator', dest='descriminator', action='store_true',
-                      default=False, help='descriminator')
+parser.add_option('-a', '--active-learning', dest='al', action='store_true',
+                      default=False, help='whether to use active learning')
 
 (args, _) = parser.parse_args()
 
@@ -54,13 +54,11 @@ logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
 lesion_dice_weights = [0., 0., 0., 0.]
-d_weight = 0.1
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
-patch_size = 32
 image_dir = '/home/qiqix/Sub1'
-
+image_dir2 = '/home/qiqix/Diaretdb1/resources/images/'
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
@@ -145,27 +143,15 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     
     return images_batch
 
-def image_to_patch(image, patch_size):
-    bs, channel, h, w = image.shape
-    return (image.reshape((bs, channel, h//patch_size, patch_size, w//patch_size, patch_size))
-            .permute(2, 4, 0, 1, 3, 5)
-            .reshape((-1, channel, patch_size, patch_size)))
-
-def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0, dnet=None):
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
-    if dnet:
-        dnet.to(device=device)
     tot_step_count = start_step
-
     for epoch in range(start_epoch, start_epoch+num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, start_epoch+num_epochs))
         scheduler.step()
         model.train()
-        if args.descriminator:
-            dnet.train()
         epoch_loss_ce = 0
         epoch_losses_dice = [0, 0, 0, 0]
-        epoch_loss_d = 0
         N_train = len(train_dataset)
         batch_step_count = 0
         vis_images = []
@@ -183,9 +169,10 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            masks_pred_softmax = softmax(masks_pred)
+            masks_pred_softmax = softmax(masks_pred) 
             losses_dice = dice_loss(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
            
+            
             # Save images
             if (epoch + 1) % 20 == 0:
                 images_batch = generate_log_images(inputs, true_masks, masks_pred_softmax) 
@@ -201,25 +188,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             for i, loss_dice in enumerate(losses_dice):
                 epoch_losses_dice[i] += losses_dice[i].item() * lesion_dice_weights[i]
                 epoch_loss_tot += epoch_losses_dice[i]
-            
-            # add descriminator loss
-            if dnet:
-                dnet.train()
-                input_real = torch.cat((inputs, true_masks[:, 1:-1, :, :]), 1)
-
-                input_real = image_to_patch(input_real, patch_size)
-                masks_max, _ = torch.max(masks_pred_softmax, 1)
-                masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)
-                input_fake = torch.cat((inputs, masks_hard[:, 1:-1, :, :]), 1)
-                input_fake = image_to_patch(input_fake, patch_size)
-                d_real = dnet(input_real)
-                d_fake = dnet(input_fake)
-                d_real_loss = -torch.mean(d_real)
-                d_fake_loss = torch.mean(d_fake)
-                loss_d = d_real_loss + d_fake_loss
-                epoch_loss_d += loss_d.item()
-                epoch_loss_tot += epoch_loss_d
-                loss += loss_d * d_weight
 
             optimizer.zero_grad()
             loss.backward()
@@ -230,7 +198,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         
         # Traning logs
         logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
-        logger.scalar_summary('train_loss_d', epoch_loss_d / batch_step_count, step=tot_step_count)
         for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
             logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
@@ -250,8 +217,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             state = {
                     'epoch': epoch,
                     'step': tot_step_count,
-                    'g_state_dict': model.state_dict(),
-                    'd_state_dict': dnet.state_dict(),
+                    'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict()
                     }
             torch.save(state,
@@ -267,16 +233,13 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=6)
    
-    if args.descriminator:
-        dnet = DNet(input_dim=7, output_dim=1, input_size=patch_size)
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['g_state_dict'])
-            dnet.load_state_dict(checkpoint['d_state_dict'])
+            model.load_state_dict(checkpoint['state_dict'])
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
@@ -284,10 +247,11 @@ if __name__ == '__main__':
         start_epoch = 0
         start_step = 0
 
-    train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, phase='train', healthy_included=args.healthyincluded)
+    train_image_paths, train_mask_paths = get_images_diaretAL(image_dir2, args.preprocess, phase='train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
 
     if net_name == 'unet':
+        # not using unet, deprecated yet.
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
@@ -298,7 +262,7 @@ if __name__ == '__main__':
                                 RandomCrop(image_size),
                     ]))
     elif net_name == 'hednet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = DiaretALDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 RandomCrop(image_size),
@@ -313,10 +277,7 @@ if __name__ == '__main__':
     train_loader = DataLoader(train_dataset, args.batchsize, shuffle=True)
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
 
-    params = list(model.parameters())
-    if args.descriminator:
-        params += list(dnet.parameters())
-    optimizer = optim.SGD(params,
+    optimizer = optim.SGD(model.parameters(),
                               lr=args.lr,
                               momentum=0.9,
                               weight_decay=0.0005)
@@ -324,4 +285,4 @@ if __name__ == '__main__':
     #bg, ex, he, ma, se
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 2., 2., 4., 0.1]).to(device))
     
-    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step, dnet=dnet)
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)

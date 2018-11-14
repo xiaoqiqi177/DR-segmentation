@@ -22,7 +22,6 @@ from logger import Logger
 import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 parser = OptionParser()
@@ -47,10 +46,6 @@ lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
 image_dir = '/home/qiqix/Sub1'
 
-logdir = args.logdir
-if not os.path.exists(logdir):
-    os.mkdir(logdir)
-
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader):
     model.to(device=device)
@@ -59,38 +54,33 @@ def eval_model(model, eval_loader):
     dice_coeffs_soft = np.zeros(4)
     dice_coeffs_hard = np.zeros(4)
     vis_images = []
-    
     with torch.set_grad_enabled(False):
-        batch_id = 0
         for inputs, true_masks in tqdm(eval_loader):
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
             bs, _, h, w = inputs.shape
             h_size = (h-1) // image_size + 1
             w_size = (w-1) // image_size + 1
-            masks_pred = torch.zeros(true_masks.shape).to(dtype=torch.float)
+            masks_pred = torch.zeros(true_masks.shape).to(device=device, dtype=torch.float)
             for i in range(h_size):
                 for j in range(w_size):
                     h_max = min(h, (i+1)*image_size)
                     w_max = min(w, (j+1)*image_size)
                     inputs_part = inputs[:,:, i*image_size:h_max, j*image_size:w_max]
                     if net_name == 'unet':
-                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part).to("cpu")
+                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)
                     elif net_name == 'hednet':
-                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)[-1].to("cpu")
+                        masks_pred[:, :, i*image_size:h_max, j*image_size:w_max] = model(inputs_part)[-1]
         
             masks_pred_softmax = softmax(masks_pred)
             masks_max, _ = torch.max(masks_pred_softmax, 1)
             masks_soft = masks_pred_softmax[:, 1:-1, :, :]
-            np.save(os.path.join(logdir, 'mask_soft_'+str(batch_id)+'.npy'), masks_soft.numpy())
-            np.save(os.path.join(logdir, 'mask_true_'+str(batch_id)+'.npy'), true_masks[:,1:-1].cpu().numpy())
             masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:-1, :, :]
-            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :].to("cpu"))
-            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :].to("cpu"))
+            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :])
+            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :])
             images_batch = generate_log_images_full(inputs, true_masks[:, 1:-1], masks_soft, masks_hard) 
             images_batch = images_batch.to("cpu").numpy()
             vis_images.extend(images_batch)     
-            batch_id += 1
     return dice_coeffs_soft / eval_tot, dice_coeffs_hard / eval_tot, vis_images
 
 def denormalize(inputs):
