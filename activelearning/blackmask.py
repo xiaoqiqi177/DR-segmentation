@@ -3,7 +3,7 @@ import glob
 import cv2
 import numpy as np
 
-image_dir = '/home/qiqix/Sub1/'
+image_dir = '/home/yiwei/data/Sub1'
 mask_dir = os.path.join(image_dir, 'GroundTruth', 'MASK')
 os.mkdir(mask_dir)
 

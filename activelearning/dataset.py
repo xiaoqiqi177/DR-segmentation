@@ -133,7 +133,6 @@ class DiaretALDataset(Dataset):
                     predicted_maskimg = self.cv2_loader(predicted_mask_path)
                     true_maskimg = maskimg * predicted_maskimg
                     # (TODO): need to binarize the mask.
-
                     info.append(Image.fromarray(true_maskimg))
         if self.transform:
             info = self.transform(info)
@@ -152,15 +151,19 @@ class DiaretALDataset(Dataset):
             return inputs
 
 class MixedDataset(Dataset):
-    def __init__(self, dataset1, dataset2):
+    def __init__(self, dataset1, dataset2, prob):
         self.dataset1 = dataset1
         self.dataset2 = dataset2
+        self.prob = prob # probability to  select dataset1.
 
     def __len__(self):
         return len(self.dataset1) + len(self.dataset2)
 
     def __getitem__(self, idx):
-        if idx < len(self.dataset1):
-            return self.dataset1.__getitem__(idx)
+        # does not respect the index, thus we can do fully random pick up.
+        if np.random.rand() < self.prob:
+            random_idx = np.random.randint(len(self.dataset1))
+            return self.dataset1.__getitem__(random_idx)
         else:
-            return self.dataset2.__getitem__(idx-len(self.dataset1))
+            random_idx = np.random.randint(len(self.dataset2))
+            return self.dataset2.__getitem__(random_idx)

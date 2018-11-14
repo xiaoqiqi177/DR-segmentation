@@ -39,7 +39,7 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
 net_name = args.netname
 lesions = ['ex', 'he', 'ma', 'se']
 image_size = 512
-image_dir = '/home/qiqix/Diaretdb1/resources/images/'
+image_dir = "/home/yiwei/data/Diaretdb1/resources/images"
 
 if not os.path.exists(args.output):
     os.mkdir(args.output)
