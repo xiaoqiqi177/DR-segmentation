@@ -75,9 +75,11 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
         train_number = int(len(each) * train_ratio)
         eval_number = int(len(each) * eval_ratio)
         if phase == 'train':
-            image_paths.extend(each[:train_number])
+            #image_paths.extend(each[:train_number])
+            image_paths.extend(each[eval_number:])
         elif phase == 'eval':
-            image_paths.extend(each[train_number:train_number+eval_number])
+            #image_paths.extend(each[train_number:train_number+eval_number])
+            image_paths.extend(each[:eval_number])
         else:
             image_paths.extend(each[train_number+eval_number:])
     mask_path= os.path.join(image_dir, 'GroundTruth')
