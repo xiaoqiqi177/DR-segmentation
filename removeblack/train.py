@@ -54,7 +54,7 @@ lesion_dice_weights = [0., 0., 0., 0.]
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
-image_dir = '/home/qiqix/Sub1'
+image_dir = '/home/qiqi/Sub1'
 
 
 softmax = nn.Softmax(1)
@@ -251,7 +251,6 @@ if __name__ == '__main__':
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
-                                ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 RandomCrop(image_size),
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
