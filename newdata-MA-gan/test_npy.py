@@ -54,8 +54,6 @@ def eval_model(model, eval_loader):
     model.to(device=device)
     model.eval()
     eval_tot = len(eval_loader)
-    dice_coeffs_soft = np.zeros(4)
-    dice_coeffs_hard = np.zeros(4)
     vis_images = []
     
     with torch.set_grad_enabled(False):
@@ -79,17 +77,15 @@ def eval_model(model, eval_loader):
         
             masks_pred_softmax = softmax(masks_pred)
             masks_max, _ = torch.max(masks_pred_softmax, 1)
-            masks_soft = masks_pred_softmax[:, 1:-1, :, :]
+            masks_soft = masks_pred_softmax[:, 1:, :, :]
             np.save(os.path.join(logdir, 'mask_soft_'+str(batch_id)+'.npy'), masks_soft.numpy())
-            np.save(os.path.join(logdir, 'mask_true_'+str(batch_id)+'.npy'), true_masks[:,1:-1].cpu().numpy())
-            masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:-1, :, :]
-            dice_coeffs_soft += dice_coeff(masks_soft, true_masks[:, 1:-1, :, :].to("cpu"))
-            dice_coeffs_hard += dice_coeff(masks_hard, true_masks[:, 1:-1, :, :].to("cpu"))
-            images_batch = generate_log_images_full(inputs, true_masks[:, 1:-1], masks_soft, masks_hard) 
+            np.save(os.path.join(logdir, 'mask_true_'+str(batch_id)+'.npy'), true_masks[:,1:].cpu().numpy())
+            masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)[:, 1:, :, :]
+            images_batch = generate_log_images_full(inputs, true_masks[:, 1:], masks_soft, masks_hard) 
             images_batch = images_batch.to("cpu").numpy()
             vis_images.extend(images_batch)     
             batch_id += 1
-    return dice_coeffs_soft / eval_tot, dice_coeffs_hard / eval_tot, vis_images
+    return vis_images
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -110,28 +106,22 @@ def generate_log_images_full(inputs, true_masks, masks_soft, masks_hard):
     
     images_batch[:, :, :h, :w] = inputs
     
-    images_batch[:, :, :h, w+pad_size:] = true_masks[:, 3, :, :][:, None, :, :]
-    images_batch[:, 0, :h, w+pad_size:] += true_masks[:, 0, :, :] 
-    images_batch[:, 1, :h, w+pad_size:] += true_masks[:, 1, :, :] 
-    images_batch[:, 2, :h, w+pad_size:] += true_masks[:, 2, :, :] 
+    images_batch[:, :, :h, w+pad_size:] = 0
+    images_batch[:, 0, :h, w+pad_size:] = true_masks[:, 0, :, :] 
     
-    images_batch[:, :, h+pad_size:, :w] = masks_soft[:, 3, :, :][:, None, :, :]
-    images_batch[:, 0, h+pad_size:, :w] += masks_soft[:, 0, :, :]
-    images_batch[:, 1, h+pad_size:, :w] += masks_soft[:, 1, :, :]
-    images_batch[:, 2, h+pad_size:, :w] += masks_soft[:, 2, :, :]
+    images_batch[:, :, h+pad_size:, :w] = 0
+    images_batch[:, 0, h+pad_size:, :w] = masks_soft[:, 0, :, :]
     
-    images_batch[:, :, h+pad_size:, w+pad_size:] = masks_hard[:, 3, :, :][:, None, :, :]
-    images_batch[:, 0, h+pad_size:, w+pad_size:] += masks_hard[:, 0, :, :]
-    images_batch[:, 1, h+pad_size:, w+pad_size:] += masks_hard[:, 1, :, :]
-    images_batch[:, 2, h+pad_size:, w+pad_size:] += masks_hard[:, 2, :, :]
+    images_batch[:, :, h+pad_size:, w+pad_size:] = 0
+    images_batch[:, 0, h+pad_size:, w+pad_size:] = masks_hard[:, 0, :, :]
     return images_batch
 
 if __name__ == '__main__':
 
     if net_name == 'unet': 
-        model = UNet(n_channels=3, n_classes=6)
+        model = UNet(n_channels=3, n_classes=2)
     else:
-        model = HNNNet(pretrained=True, class_number=6)
+        model = HNNNet(pretrained=True, class_number=2)
     
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
@@ -145,16 +135,15 @@ if __name__ == '__main__':
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='test')
 
     if net_name == 'unet':
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
                                 Compose([
                     ]))
     elif net_name == 'hednet':
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
                                 Compose([
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
                                 
-    dice_coeffs_soft, dice_coeffs_hard, vis_images = eval_model(model, eval_loader)
-    print(dice_coeffs_soft, dice_coeffs_hard)
-    #logger.image_summary('eval_images', vis_images, step=0)
+    vis_images = eval_model(model, eval_loader)
+    logger.image_summary('eval_images', vis_images, step=0)

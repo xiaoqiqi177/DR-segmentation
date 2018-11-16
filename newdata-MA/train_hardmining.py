@@ -60,7 +60,6 @@ softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
     eval_tot = len(eval_loader)
-    dice_coeffs = np.zeros(1)
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
@@ -77,11 +76,9 @@ def eval_model(model, eval_loader, criterion):
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            eval_loss_ce += loss_ce
+            eval_loss_ce += loss_ce.mean()
 
-            masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
-        return dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+        return eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -91,24 +88,40 @@ def denormalize(inputs):
         std = torch.FloatTensor([0.229, 0.224, 0.225]).to(device)
         return ((inputs * std[None, :, None, None] + mean[None, :, None, None])*255.).to(device=device, dtype=torch.uint8)
 
-    
 def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     true_masks = (true_masks_t * 255.).to(device=device, dtype=torch.uint8)
     masks_pred_softmax = (masks_pred_softmax_t.detach() * 255.).to(device=device, dtype=torch.uint8)
     inputs = denormalize(inputs_t)
     bs, _, h, w = inputs.shape
     pad_size = 5
-    images_batch = (torch.ones((bs, 3, h, w*3+pad_size*2)) * 255.).to(device=device, dtype=torch.uint8)
+    images_batch = (torch.ones((bs, 3, h*3+pad_size*2, w*4+pad_size*3)) * 255.).to(device=device, dtype=torch.uint8)
     
-    images_batch[:, :, :, :w] = inputs
+    images_batch[:, :, :h, :w] = inputs
     
-    images_batch[:, :, :, w+pad_size:w*2+pad_size] = 0
-    images_batch[:, 0, :, w+pad_size:w*2+pad_size] = true_masks[:, 1, :, :]
+    images_batch[:, :, h+pad_size:h*2+pad_size, :w] = 0
+    images_batch[:, 0, h+pad_size:h*2+pad_size, :w] = true_masks[:, 1, :, :]
     
-    images_batch[:, :, :, w*2+pad_size*2:] = 0
-    images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
-    return images_batch
+    images_batch[:, :, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = 0
+    images_batch[:, 1, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = true_masks[:, 2, :, :]
+    
+    images_batch[:, :, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = 0
+    images_batch[:, 2, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = true_masks[:, 3, :, :]
+    
+    images_batch[:, :, h+pad_size:h*2+pad_size, w*3+pad_size*3:] = true_masks[:, 4, :, :][:, None, :, :]
+    
   
+    images_batch[:, :, h*2+pad_size*2:, :w] = 0
+    images_batch[:, 0, h*2+pad_size*2:, :w] = masks_pred_softmax[:, 1, :, :]
+    
+    images_batch[:, :, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = 0
+    images_batch[:, 1, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = masks_pred_softmax[:, 2, :, :]
+    
+    images_batch[:, :, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = 0
+    images_batch[:, 2, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = masks_pred_softmax[:, 3, :, :]
+    
+    images_batch[:, :, h*2+pad_size*2:, w*3+pad_size*3:] = masks_pred_softmax[:, 4, :, :][:, None, :, :]
+    
+    return images_batch
 
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
@@ -121,7 +134,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         epoch_losses_dice = [0]
         N_train = len(train_dataset)
         batch_step_count = 0
-        vis_images = []
+        #vis_images = []
         for inputs, true_masks in tqdm(train_loader):
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
@@ -135,14 +148,16 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
-            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+            loss_ce_all = criterion(masks_pred_flat, true_masks_flat.long())
+            loss_topk = loss_ce_all.topk(1000)[0]
+            loss_ce = torch.sum(loss_topk) / 1000.
             masks_pred_softmax = softmax(masks_pred) 
             losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
             # Save images
-            if (epoch + 1) % 20 == 0:
-                images_batch = generate_log_images(inputs, true_masks, masks_pred_softmax) 
-                vis_images.extend(images_batch)
+            #if (epoch + 1) % 20 == 0:
+            #    images_batch = generate_log_images(inputs, true_masks, masks_pred_softmax) 
+            #    vis_images.extend(images_batch)
 
             ce_weight = 1.
             loss = loss_ce * ce_weight
@@ -169,10 +184,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
         # Validation logs
-        dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
+        eval_loss_ce = eval_model(model, eval_loader, criterion)
         logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
-        for lesion, coeff in zip(lesions, dice_coeffs):
-            logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
 
         if not os.path.exists(dir_checkpoint):
             os.mkdir(dir_checkpoint)
@@ -186,7 +199,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             torch.save(state,
                         os.path.join(dir_checkpoint, 'model_{}.pth.tar'.format(epoch + 1)))
             print('Checkpoint {} saved !'.format(epoch + 1))
-            logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
+            #logger.image_summary('train_images', [vis_image.cpu().numpy() for vis_image in vis_images], step=tot_step_count)
 
 
 if __name__ == '__main__':
@@ -247,6 +260,6 @@ if __name__ == '__main__':
                               weight_decay=0.0005)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
     #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1.]).to(device))
+    criterion = nn.CrossEntropyLoss(reduce=False)
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
