@@ -54,7 +54,7 @@ logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
 lesion_dice_weights = [0., 0., 0., 0.]
-d_weight = 0.1
+d_weight = 0.01
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
@@ -221,7 +221,6 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                 epoch_loss_tot += epoch_loss_d
                 loss += loss_d * d_weight
 
-            print("loss: {}, loss_ce: {}, loss_d: {}".format(loss, loss_ce, loss_d)) 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

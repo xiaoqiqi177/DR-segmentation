@@ -54,7 +54,7 @@ lesion_dice_weights = [0., 0., 0., 0.]
 lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
-image_dir = '/home/qiqix/Sub1'
+image_dir = '/home/yiwei/data/Sub1'
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader):

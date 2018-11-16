@@ -56,7 +56,6 @@ rotation_angle = 20
 image_size = 512
 image_dir = '/home/qiqi/Sub1'
 
-
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
