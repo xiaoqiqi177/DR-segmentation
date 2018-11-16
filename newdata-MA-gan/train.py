@@ -102,33 +102,15 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     inputs = denormalize(inputs_t)
     bs, _, h, w = inputs.shape
     pad_size = 5
-    images_batch = (torch.ones((bs, 3, h*3+pad_size*2, w*4+pad_size*3)) * 255.).to(device=device, dtype=torch.uint8)
+    images_batch = (torch.ones((bs, 3, h, w*3+pad_size*2)) * 255.).to(device=device, dtype=torch.uint8)
     
-    images_batch[:, :, :h, :w] = inputs
+    images_batch[:, :, :, :w] = inputs
     
-    images_batch[:, :, h+pad_size:h*2+pad_size, :w] = 0
-    images_batch[:, 0, h+pad_size:h*2+pad_size, :w] = true_masks[:, 1, :, :]
+    images_batch[:, :, :, w+pad_size:w*2+pad_size] = 0
+    images_batch[:, 0, :, w+pad_size:w*2+pad_size] = true_masks[:, 1, :, :]
     
-    images_batch[:, :, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = 0
-    images_batch[:, 1, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = true_masks[:, 2, :, :]
-    
-    images_batch[:, :, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = 0
-    images_batch[:, 2, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = true_masks[:, 3, :, :]
-    
-    images_batch[:, :, h+pad_size:h*2+pad_size, w*3+pad_size*3:] = true_masks[:, 4, :, :][:, None, :, :]
-    
-  
-    images_batch[:, :, h*2+pad_size*2:, :w] = 0
-    images_batch[:, 0, h*2+pad_size*2:, :w] = masks_pred_softmax[:, 1, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = 0
-    images_batch[:, 1, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = masks_pred_softmax[:, 2, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = 0
-    images_batch[:, 2, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = masks_pred_softmax[:, 3, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w*3+pad_size*3:] = masks_pred_softmax[:, 4, :, :][:, None, :, :]
-    
+    images_batch[:, :, :, w*2+pad_size*2:] = 0
+    images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
     return images_batch
 
 def image_to_patch(image, patch_size):
