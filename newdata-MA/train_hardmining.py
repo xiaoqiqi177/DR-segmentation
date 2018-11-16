@@ -60,7 +60,6 @@ softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
     eval_tot = len(eval_loader)
-    dice_coeffs = np.zeros(1)
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
@@ -77,11 +76,9 @@ def eval_model(model, eval_loader, criterion):
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            eval_loss_ce += loss_ce
+            eval_loss_ce += loss_ce.mean()
 
-            masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
-        return dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+        return eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -151,7 +148,9 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
-            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+            loss_ce_all = criterion(masks_pred_flat, true_masks_flat.long())
+            loss_topk = loss_ce_all.topk(1000)[0]
+            loss_ce = torch.sum(loss_topk) / 1000.
             masks_pred_softmax = softmax(masks_pred) 
             losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
@@ -261,6 +260,6 @@ if __name__ == '__main__':
                               weight_decay=0.0005)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
     #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1.]).to(device))
+    criterion = nn.CrossEntropyLoss(reduce=False)
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
