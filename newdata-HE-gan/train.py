@@ -12,6 +12,7 @@ from torch import optim
 from torch.optim import lr_scheduler
 from unet import UNet
 from hednet import HNNNet
+from dnet import DNet
 from utils import get_images
 from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
@@ -44,6 +45,8 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
                       default=False, help='preprocess input images')
 parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
                       default=False, help='include healthy images')
+parser.add_option('-d', '--descriminator', dest='descriminator', action='store_true',
+                      default=False, help='descriminator')
 
 (args, _) = parser.parse_args()
 
@@ -51,9 +54,11 @@ logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
 lesion_dice_weights = [0.]
+d_weight = 0.01
 lesions = ['he']
 rotation_angle = 20
 image_size = 512
+patch_size = 32
 image_dir = '/home/qiqix/SegmentationSub1'
 
 softmax = nn.Softmax(1)
@@ -91,7 +96,6 @@ def denormalize(inputs):
         std = torch.FloatTensor([0.229, 0.224, 0.225]).to(device)
         return ((inputs * std[None, :, None, None] + mean[None, :, None, None])*255.).to(device=device, dtype=torch.uint8)
 
-    
 def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     true_masks = (true_masks_t * 255.).to(device=device, dtype=torch.uint8)
     masks_pred_softmax = (masks_pred_softmax_t.detach() * 255.).to(device=device, dtype=torch.uint8)
@@ -108,10 +112,17 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     images_batch[:, :, :, w*2+pad_size*2:] = 0
     images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
     return images_batch
-  
 
-def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
+def image_to_patch(image, patch_size):
+    bs, channel, h, w = image.shape
+    return (image.reshape((bs, channel, h//patch_size, patch_size, w//patch_size, patch_size))
+            .permute(2, 4, 0, 1, 3, 5)
+            .reshape((-1, channel, patch_size, patch_size)))
+
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0, dnet=None):
     model.to(device=device)
+    if dnet:
+        dnet.to(device=device)
     tot_step_count = start_step
     for epoch in range(start_epoch, start_epoch+num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, start_epoch+num_epochs))
@@ -119,6 +130,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         model.train()
         epoch_loss_ce = 0
         epoch_losses_dice = [0]
+        epoch_loss_d = 0
         N_train = len(train_dataset)
         batch_step_count = 0
         vis_images = []
@@ -155,6 +167,25 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                 epoch_losses_dice[i] += losses_dice[i].item() * lesion_dice_weights[i]
                 epoch_loss_tot += epoch_losses_dice[i]
 
+            # add descriminator loss
+            if dnet:
+                dnet.train()
+                input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
+
+                input_real = image_to_patch(input_real, patch_size)
+                masks_max, _ = torch.max(masks_pred_softmax, 1)
+                masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)
+                input_fake = torch.cat((inputs, masks_hard[:, 1:, :, :]), 1)
+                input_fake = image_to_patch(input_fake, patch_size)
+                d_real = dnet(input_real)
+                d_fake = dnet(input_fake)
+                d_real_loss = -torch.mean(d_real)
+                d_fake_loss = torch.mean(d_fake)
+                loss_d = d_real_loss + d_fake_loss
+                epoch_loss_d += loss_d.item()
+                epoch_loss_tot += epoch_loss_d
+                loss += loss_d * d_weight
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -164,6 +195,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         
         # Traning logs
         logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
+        logger.scalar_summary('train_loss_d', epoch_loss_d / batch_step_count, step=tot_step_count)
         for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
             logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
@@ -180,7 +212,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             state = {
                     'epoch': epoch,
                     'step': tot_step_count,
-                    'state_dict': model.state_dict(),
+                    'g_state_dict': model.state_dict(),
+                    'd_state_dict': dnet.state_dict(),
                     'optimizer': optimizer.state_dict()
                     }
             torch.save(state,
@@ -196,13 +229,16 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=2)
    
+    if args.descriminator:
+        dnet = DNet(input_dim=4, output_dim=1, input_size=patch_size)
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['g_state_dict'])
+            dnet.load_state_dict(checkpoint['d_state_dict'])
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
@@ -240,6 +276,9 @@ if __name__ == '__main__':
 
     train_loader = DataLoader(train_dataset, args.batchsize, shuffle=True)
     eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
+    params = list(model.parameters())
+    if args.descriminator:
+        params += list(dnet.parameters())
 
     optimizer = optim.SGD(model.parameters(),
                               lr=args.lr,
@@ -248,5 +287,6 @@ if __name__ == '__main__':
     scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
     #bg, ex, he, ma, se
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1.]).to(device))
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step, dnet=dnet)
     
-    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
+   

@@ -51,10 +51,10 @@ logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
 lesion_dice_weights = [0.]
-lesions = ['he']
+lesions = ['se']
 rotation_angle = 20
 image_size = 512
-image_dir = '/home/qiqix/SegmentationSub1'
+image_dir = '/home/qiqi/SegmentationSub1'
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
@@ -91,7 +91,6 @@ def denormalize(inputs):
         std = torch.FloatTensor([0.229, 0.224, 0.225]).to(device)
         return ((inputs * std[None, :, None, None] + mean[None, :, None, None])*255.).to(device=device, dtype=torch.uint8)
 
-    
 def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     true_masks = (true_masks_t * 255.).to(device=device, dtype=torch.uint8)
     masks_pred_softmax = (masks_pred_softmax_t.detach() * 255.).to(device=device, dtype=torch.uint8)
