@@ -29,7 +29,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
                 # mean brightness.
                 for img_path in imgs_ori:
                     img_name = os.path.split(img_path)[-1].split('.')[0]
-                    mask_path = os.path.join(image_dir, 'Groundtruths', tempsetname, 'Mask', img_name+'_MASK.png')
+                    mask_path = os.path.join(image_dir, 'Groundtruths', tempsetname, 'Mask', img_name+'_MASK.tif')
                     gray = cv2.imread(img_path, 0)
                     mask_img = cv2.imread(mask_path, 0)
                     brightness = gray.sum() / (mask_img.shape[0] * mask_img.shape[1] - mask_img.sum() / 255.)
@@ -40,7 +40,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             # preprocess for apparent.
             for img_path in imgs_ori:
                 img_name = os.path.split(img_path)[-1].split('.')[0]
-                mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.png')
+                mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.tif')
                 clahe_img = clahe_gridsize(img_path, mask_path, denoise=True, verbose=False, brightnessbalance=meanbright, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'Images_CLAHE', setname, os.path.split(img_path)[-1]), clahe_img)
             
@@ -65,7 +65,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
         paths = []
         name = os.path.split(image_path)[1].split('.')[0]
         for lesion, lesion_abbv in zip(lesions, lesion_abbvs):
-            candidate_path = os.path.join(mask_path, lesion, name+'_'+lesion_abbv+'.png')
+            candidate_path = os.path.join(mask_path, lesion, name+'_'+lesion_abbv+'.tif')
             if os.path.exists(candidate_path):
                 paths.append(candidate_path)
             else:

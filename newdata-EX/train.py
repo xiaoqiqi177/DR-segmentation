@@ -13,8 +13,7 @@ from torch.optim import lr_scheduler
 from unet import UNet
 from hednet import HNNNet
 from utils import get_images
-from utils_diaret import  get_images_diaretAL
-from dataset import IDRIDDataset, DiaretALDataset
+from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
@@ -45,28 +44,23 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
                       default=False, help='preprocess input images')
 parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
                       default=False, help='include healthy images')
-parser.add_option('-a', '--active-learning', dest='al', action='store_true',
-                      default=False, help='whether to use active learning')
 
 (args, _) = parser.parse_args()
 
 logger = Logger('./logs', args.logdir)
 dir_checkpoint = args.modeldir
 net_name = args.netname
-lesion_dice_weights = [0., 0., 0., 0.]
-lesions = ['ex', 'he', 'ma', 'se']
+lesion_dice_weights = [0.]
+lesions = ['ex']
 rotation_angle = 20
 image_size = 512
-image_dir = '/home/yiwei/data/Sub1'
-image_dir2 = '/home/yiwei/data/Diaretdb1/resources/images/'
+image_dir = '/home/qiqix/SegmentationSub1'
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
-    fg_tot = 0
-    bg_tot = 0
     eval_tot = len(eval_loader)
-    dice_coeffs = np.zeros(4)
+    dice_coeffs = np.zeros(1)
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
@@ -85,20 +79,9 @@ def eval_model(model, eval_loader, criterion):
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             eval_loss_ce += loss_ce
 
-            _, mask_indices = torch.max(masks_pred, 1)
-            _, true_masks_indices = torch.max(true_masks, 1)
-            mask_size_bg = torch.sum(true_masks_indices == 0)
-            mask_size_fg = true_masks_indices.shape[0] * true_masks_indices.shape[1] * true_masks_indices.shape[2] - torch.sum(true_masks_indices == 0) - torch.sum(true_masks_indices==5)
-            if mask_size_fg > 0: 
-                correct_fg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices > 0) * (true_masks_indices<5)).float()) / (mask_size_fg.float())
-                fg_tot += correct_fg.item()
-            if mask_size_bg > 0:
-                correct_bg = (torch.sum((mask_indices == true_masks_indices) *(true_masks_indices == 0)).float()) / (mask_size_bg.float())
-                bg_tot += correct_bg.item()
-        
             masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
-        return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
+        return dice_coeffs / eval_tot, eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -108,40 +91,24 @@ def denormalize(inputs):
         std = torch.FloatTensor([0.229, 0.224, 0.225]).to(device)
         return ((inputs * std[None, :, None, None] + mean[None, :, None, None])*255.).to(device=device, dtype=torch.uint8)
 
+    
 def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     true_masks = (true_masks_t * 255.).to(device=device, dtype=torch.uint8)
     masks_pred_softmax = (masks_pred_softmax_t.detach() * 255.).to(device=device, dtype=torch.uint8)
     inputs = denormalize(inputs_t)
     bs, _, h, w = inputs.shape
     pad_size = 5
-    images_batch = (torch.ones((bs, 3, h*3+pad_size*2, w*4+pad_size*3)) * 255.).to(device=device, dtype=torch.uint8)
+    images_batch = (torch.ones((bs, 3, h, w*3+pad_size*2)) * 255.).to(device=device, dtype=torch.uint8)
     
-    images_batch[:, :, :h, :w] = inputs
+    images_batch[:, :, :, :w] = inputs
     
-    images_batch[:, :, h+pad_size:h*2+pad_size, :w] = 0
-    images_batch[:, 0, h+pad_size:h*2+pad_size, :w] = true_masks[:, 1, :, :]
+    images_batch[:, :, :, w+pad_size:w*2+pad_size] = 0
+    images_batch[:, 0, :, w+pad_size:w*2+pad_size] = true_masks[:, 1, :, :]
     
-    images_batch[:, :, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = 0
-    images_batch[:, 1, h+pad_size:h*2+pad_size, w+pad_size:w*2+pad_size] = true_masks[:, 2, :, :]
-    
-    images_batch[:, :, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = 0
-    images_batch[:, 2, h+pad_size:h*2+pad_size, w*2+pad_size*2:w*3+pad_size*2] = true_masks[:, 3, :, :]
-    
-    images_batch[:, :, h+pad_size:h*2+pad_size, w*3+pad_size*3:] = true_masks[:, 4, :, :][:, None, :, :]
-    
-  
-    images_batch[:, :, h*2+pad_size*2:, :w] = 0
-    images_batch[:, 0, h*2+pad_size*2:, :w] = masks_pred_softmax[:, 1, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = 0
-    images_batch[:, 1, h*2+pad_size*2:, w+pad_size:w*2+pad_size] = masks_pred_softmax[:, 2, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = 0
-    images_batch[:, 2, h*2+pad_size*2:, w*2+pad_size*2:w*3+pad_size*2] = masks_pred_softmax[:, 3, :, :]
-    
-    images_batch[:, :, h*2+pad_size*2:, w*3+pad_size*3:] = masks_pred_softmax[:, 4, :, :][:, None, :, :]
-    
+    images_batch[:, :, :, w*2+pad_size*2:] = 0
+    images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
     return images_batch
+  
 
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
@@ -151,7 +118,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         scheduler.step()
         model.train()
         epoch_loss_ce = 0
-        epoch_losses_dice = [0, 0, 0, 0]
+        epoch_losses_dice = [0]
         N_train = len(train_dataset)
         batch_step_count = 0
         vis_images = []
@@ -170,8 +137,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             masks_pred_softmax = softmax(masks_pred) 
-            losses_dice = dice_loss(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
-           
+            losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
             # Save images
             if (epoch + 1) % 20 == 0:
@@ -203,11 +169,8 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
         # Validation logs
-        bg_acc, fg_acc, dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
-        print('eval_fg_acc, eval_bg_acc: {}, {}'.format(fg_acc, bg_acc))
+        dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
         logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
-        logger.scalar_summary('bg_acc', bg_acc, step=tot_step_count)
-        logger.scalar_summary('fg_acc', fg_acc, step=tot_step_count)
         for lesion, coeff in zip(lesions, dice_coeffs):
             logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
 
@@ -229,9 +192,9 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
 if __name__ == '__main__':
 
     if net_name == 'unet': 
-        model = UNet(n_channels=3, n_classes=6)
+        model = UNet(n_channels=3, n_classes=2)
     else:
-        model = HNNNet(pretrained=True, class_number=6)
+        model = HNNNet(pretrained=True, class_number=2)
    
     if args.resume:
         if os.path.isfile(args.resume):
@@ -247,14 +210,14 @@ if __name__ == '__main__':
         start_epoch = 0
         start_step = 0
 
-    train_image_paths, train_mask_paths = get_images_diaretAL(image_dir2, args.preprocess, phase='train')
+    train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, phase='train', healthy_included=args.healthyincluded)
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
 
     if net_name == 'unet':
-        # not using unet, deprecated yet.
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
+                                #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 RandomCrop(image_size),
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
@@ -262,10 +225,11 @@ if __name__ == '__main__':
                                 RandomCrop(image_size),
                     ]))
     elif net_name == 'hednet':
-        train_dataset = DiaretALDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 RandomCrop(image_size),
+                                #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
@@ -281,8 +245,8 @@ if __name__ == '__main__':
                               lr=args.lr,
                               momentum=0.9,
                               weight_decay=0.0005)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
     #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 2., 2., 4., 0.1]).to(device))
+    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1.]).to(device))
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)

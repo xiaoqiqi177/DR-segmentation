@@ -3,14 +3,15 @@ import glob
 import cv2
 import numpy as np
 
-image_dir = '/home/yiwei/data/Sub1'
-mask_dir = os.path.join(image_dir, 'GroundTruth', 'MASK')
+image_dir = '/home/qiqix/SegmentationSub1/'
+#setname = 'TrainingSet'
+setname = 'TestingSet'
+mask_dir = os.path.join(image_dir, 'Groundtruths', setname, 'Mask')
 os.mkdir(mask_dir)
 
-apparent_ori = glob.glob(os.path.join(image_dir, 'ApparentRetinopathy/*.jpg'))
-noapparent_ori = glob.glob(os.path.join(image_dir, 'NoApparentRetinopathy/*.jpg'))
+imgs_ori = glob.glob(os.path.join(image_dir, 'OriginalImages/'+setname+'/*.jpg'))
 
-for image_path in apparent_ori+noapparent_ori:
+for image_path in imgs_ori:
     image = cv2.imread(image_path)
     image_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     black_mask = np.uint8((image_gray > 15)*255.)

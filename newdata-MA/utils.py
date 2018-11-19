@@ -3,6 +3,20 @@ import glob
 from preprocess import clahe_gridsize
 import cv2
 
+import torch.nn as nn
+
+def initialize_weights(net):
+    for m in net.modules():
+        if isinstance(m, nn.Conv2d):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.ConvTranspose2d):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+
 train_ratio = 0.9
 eval_ratio = 0.1
 
@@ -29,7 +43,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
                 # mean brightness.
                 for img_path in imgs_ori:
                     img_name = os.path.split(img_path)[-1].split('.')[0]
-                    mask_path = os.path.join(image_dir, 'Groundtruths', tempsetname, 'Mask', img_name+'_MASK.tif')
+                    mask_path = os.path.join(image_dir, 'Groundtruths', tempsetname, 'Mask', img_name+'_MASK.png')
                     gray = cv2.imread(img_path, 0)
                     mask_img = cv2.imread(mask_path, 0)
                     brightness = gray.sum() / (mask_img.shape[0] * mask_img.shape[1] - mask_img.sum() / 255.)
@@ -40,7 +54,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             # preprocess for apparent.
             for img_path in imgs_ori:
                 img_name = os.path.split(img_path)[-1].split('.')[0]
-                mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.tif')
+                mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.png')
                 clahe_img = clahe_gridsize(img_path, mask_path, denoise=True, verbose=False, brightnessbalance=meanbright, cliplimit=limit, gridsize=grid_size)
                 cv2.imwrite(os.path.join(image_dir, 'Images_CLAHE', setname, os.path.split(img_path)[-1]), clahe_img)
             
@@ -65,7 +79,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
         paths = []
         name = os.path.split(image_path)[1].split('.')[0]
         for lesion, lesion_abbv in zip(lesions, lesion_abbvs):
-            candidate_path = os.path.join(mask_path, lesion, name+'_'+lesion_abbv+'.tif')
+            candidate_path = os.path.join(mask_path, lesion, name+'_'+lesion_abbv+'.png')
             if os.path.exists(candidate_path):
                 paths.append(candidate_path)
             else:
