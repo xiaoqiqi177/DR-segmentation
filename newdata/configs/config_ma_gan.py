@@ -12,7 +12,7 @@ IMAGE_SIZE = 512
 EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
 USE_DNET = True
-D_WEIGHT = 0.01
+D_WEIGHT = 0.1
 PATCH_SIZE = 128
 MODELS_DIR = 'models_hednet_true_ma_gan'
 LOG_DIR = 'drlog_hednet_true_ma_gan'
@@ -21,9 +21,10 @@ RESUME_MODEL = None
 LESION_DICE_WEIGHT = 0.
 ROTATION_ANGEL = 20
 CROSSENTROPY_WEIGHTS = [0.1, 1.]
+RESUME_MODEL = 'pretrained/model_2640_ma.pth.tar'
 
 #Modify the parameters for testing.
 TEST_BATCH_SIZE = 2
-TEST_MODEL = 'models_hednet_true_ma/model_1920.pth.tar'
+TEST_MODEL = 'pretrained/model_2640_ma.pth.tar'
 SAVE_OUTPUT_IMAGES = True
-TEST_OUTPUT_DIR = 'test_true_pre_ma'
+TEST_OUTPUT_DIR = 'test_true_pre_ma_gan'
