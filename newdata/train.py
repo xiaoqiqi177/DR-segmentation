@@ -159,10 +159,16 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             # add descriminator loss
             if dnet:
                 dnet.train()
-                input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
-                input_real = image_to_patch(input_real, config.PATCH_SIZE)
-                input_fake = torch.cat((inputs, masks_pred_softmax[:, 1:, :, :]), 1)
-                input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
+                if config.D_MULTIPLY:
+                    input_real = torch.matmul(inputs, true_masks[:, 1:, :, :])
+                    input_real = image_to_patch(input_real, config.PATCH_SIZE)
+                    input_fake = torch.matmul(inputs, masks_pred_softmax[:, 1:, :, :]))
+                    input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
+                else:
+                    input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
+                    input_real = image_to_patch(input_real, config.PATCH_SIZE)
+                    input_fake = torch.cat((inputs, masks_pred_softmax[:, 1:, :, :]), 1)
+                    input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
                 d_real = dnet(input_real)
                 d_fake = dnet(input_fake)
                 d_real_loss = -torch.mean(d_real)
@@ -225,7 +231,10 @@ if __name__ == '__main__':
         model = HNNNet(pretrained=True, class_number=2)
    
     if config.USE_DNET:
-        dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
+        if config.D_MULTIPLY:
+            dnet = DNet(input_dim=3, output_dim=1, input_size=config.PATCH_SIZE)
+        else:
+            dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
     else:
         dnet = None
 
