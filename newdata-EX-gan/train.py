@@ -237,8 +237,12 @@ if __name__ == '__main__':
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['g_state_dict'])
-            dnet.load_state_dict(checkpoint['d_state_dict'])
+            try:
+                model.load_state_dict(checkpoint['g_state_dict'])
+                dnet.load_state_dict(checkpoint['d_state_dict'])
+            except:
+                model.load_state_dict(checkpoint['state_dict'])
+
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
