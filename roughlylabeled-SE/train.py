@@ -13,7 +13,8 @@ from torch.optim import lr_scheduler
 from unet import UNet
 from hednet import HNNNet
 from utils import get_images
-from dataset import IDRIDDataset
+from utils_diaret import  get_images_diaretAL
+from dataset import IDRIDDataset, DiaretALDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
@@ -44,6 +45,8 @@ parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
                       default=False, help='preprocess input images')
 parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
                       default=False, help='include healthy images')
+parser.add_option('-a', '--active-learning', dest='al', action='store_true',
+                      default=False, help='whether to use active learning')
 
 (args, _) = parser.parse_args()
 
@@ -55,14 +58,16 @@ lesions = ['ex', 'he', 'ma', 'se']
 rotation_angle = 20
 image_size = 512
 image_dir = '/home/yiwei/data/Sub1'
+image_dir2 = '/home/yiwei/data/Diaretdb1/resources/images/'
 
 softmax = nn.Softmax(1)
-def eval_model(model, eval_loader):
+def eval_model(model, eval_loader, criterion):
     model.eval()
     fg_tot = 0
     bg_tot = 0
     eval_tot = len(eval_loader)
     dice_coeffs = np.zeros(4)
+    eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
         for inputs, true_masks in eval_loader:
@@ -77,6 +82,8 @@ def eval_model(model, eval_loader):
             masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
             true_masks_indices = torch.argmax(true_masks, 1)
             true_masks_flat = true_masks_indices.reshape(-1)
+            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+            eval_loss_ce += loss_ce
 
             _, mask_indices = torch.max(masks_pred, 1)
             _, true_masks_indices = torch.max(true_masks, 1)
@@ -91,7 +98,7 @@ def eval_model(model, eval_loader):
         
             masks_pred_softmax = softmax(masks_pred) 
             dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:-1, :, :], true_masks[:, 1:-1, :, :])
-        return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot
+        return bg_tot / eval_tot, fg_tot / eval_tot, dice_coeffs / eval_tot, eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -136,7 +143,7 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     
     return images_batch
 
-def train_model(model, train_loader, eval_loader, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
     model.to(device=device)
     tot_step_count = start_step
     for epoch in range(start_epoch, start_epoch+num_epochs):
@@ -149,30 +156,8 @@ def train_model(model, train_loader, eval_loader, optimizer, scheduler, batch_si
         batch_step_count = 0
         vis_images = []
         for inputs, true_masks in tqdm(train_loader):
-            weight = torch.FloatTensor([0, 0, 0, 0, 0, 0])
-            pixel_number = np.ones_like(true_masks[:, 0, :, :]).sum()
-            pixel_class_numbers = [None, None, None, None, None, None]
-            for idx in range(6):
-                pixel_class_numbers[idx] = (true_masks[:, idx, :, :]).sum().to(dtype=torch.float)
-            bg_number = pixel_class_numbers[0] + pixel_class_numbers[5]
-            fg_number = pixel_number - bg_number
-            if fg_number == 0:
-                continue
-            weight_bg = ((pixel_number + 1.) / (bg_number + 1.)).to(dtype=torch.float)
-            weight_fg = ((pixel_number + 1.) / (fg_number + 1.)).to(dtype=torch.float)
-            
-            bg_sum = 1. / (pixel_class_numbers[0] + 1.) + 1. / (pixel_class_numbers[5] + 1.)
-            weight[0] = weight_bg * (1. / (pixel_class_numbers[0] + 1.) / bg_sum)
-            weight[5] = weight_bg * (1. / (pixel_class_numbers[5] + 1.) / bg_sum)
-            
-            fg_sum = 0.
-            for idx in range(1, 5):
-                fg_sum += 1. / (pixel_class_numbers[idx] + 1.)
-            for idx in range(1, 5):
-                weight[idx] = weight_fg * (1. / (pixel_class_numbers[idx] + 1.) / fg_sum)
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
-            criterion = nn.CrossEntropyLoss(weight=weight.to(device))
 
             if net_name == 'unet':
                 masks_pred = model(inputs)
@@ -218,8 +203,9 @@ def train_model(model, train_loader, eval_loader, optimizer, scheduler, batch_si
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
         # Validation logs
-        bg_acc, fg_acc, dice_coeffs = eval_model(model, eval_loader)
+        bg_acc, fg_acc, dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
         print('eval_fg_acc, eval_bg_acc: {}, {}'.format(fg_acc, bg_acc))
+        logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
         logger.scalar_summary('bg_acc', bg_acc, step=tot_step_count)
         logger.scalar_summary('fg_acc', fg_acc, step=tot_step_count)
         for lesion, coeff in zip(lesions, dice_coeffs):
@@ -261,10 +247,11 @@ if __name__ == '__main__':
         start_epoch = 0
         start_step = 0
 
-    train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, phase='train', healthy_included=args.healthyincluded)
+    train_image_paths, train_mask_paths = get_images_diaretAL(image_dir2, args.preprocess, phase='train')
     eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
 
     if net_name == 'unet':
+        # not using unet, deprecated yet.
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
@@ -275,7 +262,7 @@ if __name__ == '__main__':
                                 RandomCrop(image_size),
                     ]))
     elif net_name == 'hednet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = DiaretALDataset(train_image_paths, train_mask_paths, 4, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 RandomCrop(image_size),
@@ -295,5 +282,7 @@ if __name__ == '__main__':
                               momentum=0.9,
                               weight_decay=0.0005)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    #bg, ex, he, ma, se
+    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1., 2., 2., 4., 0.1]).to(device))
     
-    train_model(model, train_loader, eval_loader, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)

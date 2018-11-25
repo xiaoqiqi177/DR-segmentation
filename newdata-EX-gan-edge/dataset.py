@@ -49,6 +49,7 @@ class IDRIDDataset(Dataset):
         
         if len(info) > 1:
             masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
+            masks = masks[0:1, :, :]
             masks_sum = np.sum(masks, axis=0)
             empty_mask = 1 - masks_sum
             masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)

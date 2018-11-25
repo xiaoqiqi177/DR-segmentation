@@ -58,7 +58,11 @@ d_weight = 0.01
 lesions = ['ex']
 rotation_angle = 20
 image_size = 512
+<<<<<<< HEAD
 patch_size = 128
+=======
+patch_size = 256
+>>>>>>> 0f2413adc411ed0e87f3d631fd55e3ee0b5192ee
 image_dir = '/home/qiqix/SegmentationSub1'
 
 softmax = nn.Softmax(1)

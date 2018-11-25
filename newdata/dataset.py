@@ -1,3 +1,10 @@
+"""
+File: dataset.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
+
 import numpy as np
 from torchvision import datasets, models, transforms
 import torchvision
@@ -7,17 +14,18 @@ import cv2
 
 class IDRIDDataset(Dataset):
 
-    def __init__(self, image_paths, mask_paths=None, class_number=0, transform=None):
+    def __init__(self, image_paths, mask_paths=None, class_id=0, transform=None):
         """
         Args:
             image_paths: paths to the original images []
             mask_paths: paths to the mask images, [[]]
+            class_id: id of lesions, 0:ex, 1:he, 2:ma, 3:se
         """
         assert len(image_paths) == len(mask_paths)
         self.image_paths = image_paths
         if mask_paths is not None:
             self.mask_paths = mask_paths
-        self.class_number = class_number
+        self.class_id = class_id
         self.transform = transform
 
     def __len__(self):
@@ -49,6 +57,7 @@ class IDRIDDataset(Dataset):
         
         if len(info) > 1:
             masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
+            masks = masks[self.class_id:self.class_id+1, :, :]
             masks_sum = np.sum(masks, axis=0)
             empty_mask = 1 - masks_sum
             masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)
