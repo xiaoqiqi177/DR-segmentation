@@ -4,3 +4,4 @@
 *.pth.tar
 *.png
 *.npy
+logs

@@ -1,3 +1,11 @@
+
+"""
+File: test_npy.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
+
 import sys
 import os
 from optparse import OptionParser
@@ -23,31 +31,19 @@ import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import config
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-parser = OptionParser()
-parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
-                      type='int', help='batch size')
-parser.add_option('-p', '--log-dir', dest='logdir', default='eval',
-                    type='str', help='tensorboard log')
-parser.add_option('-m', '--model', dest='model', default='MODEL.pth.tar',
-                    type='str', help='models stored')
-parser.add_option('-n', '--net-name', dest='netname', default='unet',
-                    type='str', help='net name, unet or hednet')
-parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
-                      default=False, help='preprocess input images')
 
-(args, _) = parser.parse_args()
-
-logger = Logger('./logs', args.logdir)
-net_name = args.netname
-lesions = ['ex', 'he', 'ma', 'se']
-image_size = 512
-image_dir = '/home/qiqix/SegmentationSub1'
-
-logdir = args.logdir
+logdir = config.TEST_OUTPUT_DIR
+if config.SAVE_OUTPUT_IMAGES: 
+    logger = Logger('./logs', logdir)
 if not os.path.exists(logdir):
     os.mkdir(logdir)
+
+net_name = config.NET_NAME
+image_size = config.IMAGE_SIZE
+image_dir = config.IMAGE_DIR
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader):
@@ -123,27 +119,31 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=2)
     
-    if os.path.isfile(args.model):
-        print("=> loading checkpoint '{}'".format(args.model))
-        checkpoint = torch.load(args.model)
-        model.load_state_dict(checkpoint['g_state_dict'])
-        print('Model loaded from {}'.format(args.model))
+    test_model = config.TEST_MODEL
+    if os.path.isfile(test_model):
+        print("=> loading checkpoint '{}'".format(test_model))
+        checkpoint = torch.load(test_model)
+        try:
+            model.load_state_dict(checkpoint['state_dict'])
+        except:
+            model.load_state_dict(checkpoint['g_state_dict'])
+        print('Model loaded from {}'.format(test_model))
     else:
-        print("=> no checkpoint found at '{}'".format(args.model))
+        print("=> no checkpoint found at '{}'".format(test_model))
         sys.exit(0)
 
-    eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='test')
+    eval_image_paths, eval_mask_paths = get_images(image_dir, config.PREPROCESS, phase='test')
 
     if net_name == 'unet':
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
                                 Compose([
                     ]))
     elif net_name == 'hednet':
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
                                 Compose([
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
-    eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
+    eval_loader = DataLoader(eval_dataset, config.TEST_BATCH_SIZE, shuffle=False)
                                 
     vis_images = eval_model(model, eval_loader)
     logger.image_summary('eval_images', vis_images, step=0)
