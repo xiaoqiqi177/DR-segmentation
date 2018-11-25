@@ -101,6 +101,12 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
     return images_batch
   
+def image_to_patch(image, patch_size):
+    bs, channel, h, w = image.shape
+    return (image.reshape((bs, channel, h//patch_size, patch_size, w//patch_size, patch_size))
+            .permute(2, 4, 0, 1, 3, 5)
+            .reshape((-1, channel, patch_size, patch_size)))
+
 
 def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0, dnet=None):
     model.to(device=device)
@@ -153,13 +159,10 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             # add descriminator loss
             if dnet:
                 dnet.train()
-                input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
-
-                input_real = image_to_patch(input_real, patch_size)
-                masks_max, _ = torch.max(masks_pred_softmax, 1)
-                masks_hard = (masks_pred_softmax == masks_max[:, None, :, :]).to(dtype=torch.float)
-                input_fake = torch.cat((inputs, masks_hard[:, 1:, :, :]), 1)
-                input_fake = image_to_patch(input_fake, patch_size)
+                input_real = true_masks[:, 1:, :, :]
+                input_real = image_to_patch(input_real, config.PATCH_SIZE)
+                input_fake = masks_pred_softmax[:, 1:, :, :]
+                input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
                 d_real = dnet(input_real)
                 d_fake = dnet(input_fake)
                 d_real_loss = -torch.mean(d_real)
@@ -222,7 +225,7 @@ if __name__ == '__main__':
         model = HNNNet(pretrained=True, class_number=2)
    
     if config.USE_DNET:
-        dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
+        dnet = DNet(input_dim=1, output_dim=1, input_size=config.PATCH_SIZE)
     else:
         dnet = None
 
