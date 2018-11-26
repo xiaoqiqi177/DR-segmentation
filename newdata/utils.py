@@ -57,7 +57,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             meanbright /= images_number
             
             imgs_ori = glob.glob(os.path.join(image_dir, 'OriginalImages/'+setname+'/*.jpg'))
-            # preprocess for apparent.
+            
             for img_path in imgs_ori:
                 img_name = os.path.split(img_path)[-1].split('.')[0]
                 mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.tif')

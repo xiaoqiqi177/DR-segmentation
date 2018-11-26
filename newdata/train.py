@@ -162,7 +162,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
                 if config.D_MULTIPLY:
                     input_real = torch.matmul(inputs, true_masks[:, 1:, :, :])
                     input_real = image_to_patch(input_real, config.PATCH_SIZE)
-                    input_fake = torch.matmul(inputs, masks_pred_softmax[:, 1:, :, :]))
+                    input_fake = torch.matmul(inputs, masks_pred_softmax[:, 1:, :, :])
                     input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
                 else:
                     input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
@@ -287,11 +287,14 @@ if __name__ == '__main__':
     train_loader = DataLoader(train_dataset, batchsize, shuffle=True)
     eval_loader = DataLoader(eval_dataset, batchsize, shuffle=False)
 
-    optimizer = optim.SGD(model.parameters(),
+    params = list(model.parameters())
+    if dnet:
+        params += list(dnet.parameters())
+    optimizer = optim.SGD(params,
                               lr=config.LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9)
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(config.CROSSENTROPY_WEIGHTS).to(device))
     
     train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batchsize, \
