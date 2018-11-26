@@ -193,6 +193,9 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
+        print('loss_ce:', epoch_loss_ce / batch_step_count)
+        print('loss_d:', epoch_loss_d / batch_step_count)
+
         # Validation logs
         dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
         logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
