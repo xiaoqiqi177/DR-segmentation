@@ -30,29 +30,26 @@ from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
 from logger import Logger
-from dice_loss import dice_loss, dice_coeff
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 logger = Logger('./logs', config.LOG_DIR)
 dir_checkpoint = config.MODELS_DIR
 net_name = config.NET_NAME
-lesion_dice_weights = [config.LESION_DICE_WEIGHT]
 lesions = [config.LESION_NAME]
 rotation_angle = config.ROTATION_ANGEL
 image_size = config.IMAGE_SIZE
 image_dir = config.IMAGE_DIR
 batchsize = config.TRAIN_BATCH_SIZE
 try:
-    d_weight = config.D_WEIGHT
+    gan_weight = config.D_WEIGHT
 except:
-    d_weight = 0.
+    gan_weight = 0.
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
     eval_tot = len(eval_loader)
-    dice_coeffs = np.zeros(1)
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
@@ -72,8 +69,7 @@ def eval_model(model, eval_loader, criterion):
             eval_loss_ce += loss_ce
 
             masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
-        return dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+        return eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -117,9 +113,10 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
         g_scheduler.step()
         d_scheduler.step()
         model.train()
-        d_net.train()
+        dnet.train()
         epoch_loss_ce = 0
         epoch_loss_d = 0
+        epoch_loss_gan = 0
         N_train = len(train_dataset)
         batch_step_count = 0
         vis_images = []
@@ -138,7 +135,6 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             masks_pred_softmax = softmax(masks_pred) 
-            losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
             
             # Save images
             if (epoch + 1) % 20 == 0:
@@ -170,6 +166,7 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             
             #update d loss
             loss_d = d_real_loss + d_fake_loss
+            print('loss_d: ', loss_d.item())
             epoch_loss_d += loss_d.item()
             d_optimizer.zero_grad()
             loss_d.backward()
@@ -177,11 +174,15 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             
             #updage g loss
             d_fake = dnet(input_fake) #do backward to generator
-            gan_loss = -torch.mean(d_fake)
-            epoch_loss_gan += gan_loss.item() * d_weight
+            loss_gan = -torch.mean(d_fake)
+            epoch_loss_gan += loss_gan.item() * gan_weight
             epoch_loss_tot += epoch_loss_gan
-            g_loss += gan_loss * d_weight
+            g_loss += loss_gan * gan_weight
 
+            print('loss_ce: ', loss_ce.item())
+            print('loss_gan: ', loss_gan.item())
+            print('g_loss: ', g_loss.item())
+            
             g_optimizer.zero_grad()
             g_loss.backward()
             g_optimizer.step()
@@ -192,16 +193,11 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
         # Traning logs
         logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_d', epoch_loss_d / batch_step_count, step=tot_step_count)
-        for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
-            logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
         # Validation logs
-        dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
+        eval_loss_ce = eval_model(model, eval_loader, criterion)
         logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
-        for lesion, coeff in zip(lesions, dice_coeffs):
-            logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
-
         if not os.path.exists(dir_checkpoint):
             os.mkdir(dir_checkpoint)
         if (epoch + 1) % 20 == 0:
@@ -233,13 +229,10 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=2)
    
-    if config.USE_DNET:
-        if config.D_MULTIPLY:
-            dnet = DNet(input_dim=3, output_dim=1, input_size=config.PATCH_SIZE)
-        else:
-            dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
+    if config.D_MULTIPLY:
+        dnet = DNet(input_dim=3, output_dim=1, input_size=config.PATCH_SIZE)
     else:
-        dnet = None
+        dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
 
     resume = config.RESUME_MODEL
     if resume:
@@ -294,7 +287,7 @@ if __name__ == '__main__':
                               lr=config.LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
-    d_optimizer = optim.SGD(d_net.parameters(),
+    d_optimizer = optim.SGD(dnet.parameters(),
                               lr=config.LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
@@ -302,5 +295,5 @@ if __name__ == '__main__':
     d_scheduler = lr_scheduler.StepLR(d_optimizer, step_size=200, gamma=0.9)
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(config.CROSSENTROPY_WEIGHTS).to(device))
     
-    train_model(model, train_loader, eval_loader, criterion, g_optimizer, g_scheduler, d_optimizer, d_scheduler, batchsize, \
-            num_epochs=config.EPOCHES, start_epoch=start_epoch, start_step=start_step, dnet=dnet)
+    train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, g_scheduler, d_optimizer, d_scheduler, batchsize, \
+            num_epochs=config.EPOCHES, start_epoch=start_epoch, start_step=start_step)
