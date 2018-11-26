@@ -13,6 +13,7 @@ EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
 USE_DNET = True
 D_WEIGHT = 100
+D_MULTIPLY = False
 PATCH_SIZE = 128
 MODELS_DIR = 'models_hednet_true_ma_gan'
 LOG_DIR = 'drlog_hednet_true_ma_gan'
