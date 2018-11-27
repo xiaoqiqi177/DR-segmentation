@@ -182,9 +182,9 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             print('loss_gan: ', loss_gan.item())
             print('g_loss: ', g_loss.item())
             
-            #g_optimizer.zero_grad()
-            #g_loss.backward()
-            #g_optimizer.step()
+            g_optimizer.zero_grad()
+            g_loss.backward()
+            g_optimizer.step()
             
             batch_step_count += 1
             tot_step_count += 1
@@ -235,11 +235,11 @@ if __name__ == '__main__':
         dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
 
     g_optimizer = optim.SGD(model.parameters(),
-                              lr=config.LEARNING_RATE,
+                              lr=config.G_LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
     d_optimizer = optim.SGD(dnet.parameters(),
-                              lr=config.LEARNING_RATE,
+                              lr=config.D_LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
     resume = config.RESUME_MODEL
@@ -295,7 +295,7 @@ if __name__ == '__main__':
     eval_loader = DataLoader(eval_dataset, batchsize, shuffle=False)
 
     g_scheduler = lr_scheduler.StepLR(g_optimizer, step_size=200, gamma=0.9)
-    d_scheduler = lr_scheduler.StepLR(d_optimizer, step_size=200, gamma=0.9)
+    d_scheduler = lr_scheduler.StepLR(d_optimizer, step_size=100, gamma=0.9)
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(config.CROSSENTROPY_WEIGHTS).to(device))
     
     train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, g_scheduler, d_optimizer, d_scheduler, batchsize, \
