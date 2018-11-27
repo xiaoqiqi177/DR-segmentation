@@ -22,15 +22,18 @@ class IDRIDDataset(Dataset):
             class_id: id of lesions, 0:ex, 1:he, 2:ma, 3:se
         """
         assert len(image_paths) == len(mask_paths)
-        self.image_paths = image_paths
-        self.mask_paths = mask_paths
+        self.image_paths = []
+        self.mask_paths = []
         self.masks = []
+        self.images = []
         if self.mask_paths is not None:
             for image_path, mask_path4 in zip(image_paths, mask_paths):
                 mask_path = mask_path4[class_id]
                 if mask_path is None:
                     continue
                 else:
+                    self.image_paths.append(image_path)
+                    self.mask_paths.append(mask_path)
                     self.images.append(self.pil_loader(image_path))
                     self.masks.append(self.pil_loader(mask_path))
         

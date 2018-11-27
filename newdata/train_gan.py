@@ -182,10 +182,6 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             print('loss_gan: ', loss_gan.item())
             print('g_loss: ', g_loss.item())
             
-<<<<<<< HEAD
-
-=======
->>>>>>> 18feeb6947c4d72a9f4f66a3fb9336e635f25a6e
             g_optimizer.zero_grad()
             g_loss.backward()
             g_optimizer.step()
