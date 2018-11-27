@@ -5,7 +5,6 @@ Email: xiaoqiqi177<at>gmail<dot>com
 """
 
 import sys
-import tensorflow as tf
 from torch.autograd import Variable
 import os
 from optparse import OptionParser

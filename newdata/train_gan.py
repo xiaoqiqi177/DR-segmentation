@@ -5,7 +5,6 @@ Email: xiaoqiqi177<at>gmail<dot>com
 """
 
 import sys
-import tensorflow as tf
 from torch.autograd import Variable
 import os
 from optparse import OptionParser
@@ -183,9 +182,9 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             print('loss_gan: ', loss_gan.item())
             print('g_loss: ', g_loss.item())
             
-            g_optimizer.zero_grad()
-            g_loss.backward()
-            g_optimizer.step()
+            #g_optimizer.zero_grad()
+            #g_loss.backward()
+            #g_optimizer.step()
             
             batch_step_count += 1
             tot_step_count += 1
@@ -207,7 +206,8 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
                     'step': tot_step_count,
                     'g_state_dict': model.state_dict(),
                     'd_state_dict': dnet.state_dict(),
-                    'optimizer': optimizer.state_dict()
+                    'g_optimizer': g_optimizer.state_dict(),
+                    'd_optimizer': d_optimizer.state_dict(),
                     }
             else:
                 state = {
@@ -234,6 +234,14 @@ if __name__ == '__main__':
     else:
         dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
 
+    g_optimizer = optim.SGD(model.parameters(),
+                              lr=config.LEARNING_RATE,
+                              momentum=0.9,
+                              weight_decay=0.0005)
+    d_optimizer = optim.SGD(dnet.parameters(),
+                              lr=config.LEARNING_RATE,
+                              momentum=0.9,
+                              weight_decay=0.0005)
     resume = config.RESUME_MODEL
     if resume:
         if os.path.isfile(resume):
@@ -243,9 +251,12 @@ if __name__ == '__main__':
             start_step = checkpoint['step']
             try:
                 model.load_state_dict(checkpoint['state_dict'])
+                g_optimizer.load_state_dict(checkpoint['optimizer'])
             except:
                 model.load_state_dict(checkpoint['g_state_dict'])
                 dnet.load_state_dict(checkpoint['d_state_dict'])
+                g_optimizer.load_state_dict(checkpoint['g_optimizer'])
+                d_optimizer.load_state_dict(checkpoint['d_optimizer'])
             print('Model loaded from {}'.format(resume))
         else:
             print("=> no checkpoint found at '{}'".format(resume))
@@ -283,14 +294,6 @@ if __name__ == '__main__':
     train_loader = DataLoader(train_dataset, batchsize, shuffle=True)
     eval_loader = DataLoader(eval_dataset, batchsize, shuffle=False)
 
-    g_optimizer = optim.SGD(model.parameters(),
-                              lr=config.LEARNING_RATE,
-                              momentum=0.9,
-                              weight_decay=0.0005)
-    d_optimizer = optim.SGD(dnet.parameters(),
-                              lr=config.LEARNING_RATE,
-                              momentum=0.9,
-                              weight_decay=0.0005)
     g_scheduler = lr_scheduler.StepLR(g_optimizer, step_size=200, gamma=0.9)
     d_scheduler = lr_scheduler.StepLR(d_optimizer, step_size=200, gamma=0.9)
     criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(config.CROSSENTROPY_WEIGHTS).to(device))
