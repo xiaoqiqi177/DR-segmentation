@@ -46,6 +46,7 @@ except:
     gan_weight = 0.
 
 softmax = nn.Softmax(1)
+g_start = False
 def eval_model(model, eval_loader, criterion):
     model.eval()
     eval_tot = len(eval_loader)
@@ -182,9 +183,13 @@ def train_model(model, dnet, train_loader, eval_loader, criterion, g_optimizer, 
             print('loss_gan: ', loss_gan.item())
             print('g_loss: ', g_loss.item())
             
-            g_optimizer.zero_grad()
-            g_loss.backward()
-            g_optimizer.step()
+            if loss_ce.item() < -0.1:
+                g_start = True
+
+            if g_start is True:
+                g_optimizer.zero_grad()
+                g_loss.backward()
+                g_optimizer.step()
             
             batch_step_count += 1
             tot_step_count += 1
