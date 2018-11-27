@@ -2,7 +2,7 @@ LESION_IDS = {'EX':0, 'HE':1, 'MA':2, 'SE':3}
 
 #Modify the general parameters.
 IMAGE_DIR = '/home/qiqix/SegmentationSub1'
-LESION_NAME = 'MA'
+LESION_NAME = 'SE'
 CLASS_ID = LESION_IDS[LESION_NAME]
 NET_NAME = 'hednet'
 PREPROCESS = True
@@ -14,8 +14,8 @@ TRAIN_BATCH_SIZE = 4
 D_WEIGHT = 0.01
 D_MULTIPLY = False
 PATCH_SIZE = 64
-MODELS_DIR = 'models_hednet_true_ma_gan'
-LOG_DIR = 'drlog_hednet_true_ma_gan'
+MODELS_DIR = 'models_hednet_true_se_gan'
+LOG_DIR = 'drlog_hednet_true_se_gan'
 G_LEARNING_RATE = 0.001
 D_LEARNING_RATE = 0.001
 RESUME_MODEL = None
