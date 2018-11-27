@@ -58,7 +58,11 @@ d_weight = 0.01
 lesions = ['ex']
 rotation_angle = 20
 image_size = 512
+<<<<<<< HEAD
+patch_size = 128
+=======
 patch_size = 256
+>>>>>>> 0f2413adc411ed0e87f3d631fd55e3ee0b5192ee
 image_dir = '/home/qiqix/SegmentationSub1'
 
 softmax = nn.Softmax(1)
@@ -237,8 +241,12 @@ if __name__ == '__main__':
             checkpoint = torch.load(args.resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['g_state_dict'])
-            dnet.load_state_dict(checkpoint['d_state_dict'])
+            try:
+                model.load_state_dict(checkpoint['g_state_dict'])
+                dnet.load_state_dict(checkpoint['d_state_dict'])
+            except:
+                model.load_state_dict(checkpoint['state_dict'])
+
             print('Model loaded from {}'.format(args.resume))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))

@@ -126,7 +126,7 @@ if __name__ == '__main__':
     if os.path.isfile(args.model):
         print("=> loading checkpoint '{}'".format(args.model))
         checkpoint = torch.load(args.model)
-        model.load_state_dict(checkpoint['state_dict'])
+        model.load_state_dict(checkpoint['g_state_dict'])
         print('Model loaded from {}'.format(args.model))
     else:
         print("=> no checkpoint found at '{}'".format(args.model))
