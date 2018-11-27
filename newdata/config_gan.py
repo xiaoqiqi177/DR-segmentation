@@ -11,14 +11,14 @@ IMAGE_SIZE = 512
 #Modify the parameters for training.
 EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
-D_WEIGHT = 0.1
+D_WEIGHT = 0.01
 D_MULTIPLY = False
 PATCH_SIZE = 64
 MODELS_DIR = 'models_hednet_true_ex_gan'
 LOG_DIR = 'drlog_hednet_true_ex_gan'
 G_LEARNING_RATE = 0.001
-D_LEARNING_RATE = 0.1
-RESUME_MODEL = None
+D_LEARNING_RATE = 0.001
+RESUME_MODEL = 'models_hednet_true_ex_gan/model_20.pth.tar'
 LESION_DICE_WEIGHT = 0.
 ROTATION_ANGEL = 20
 CROSSENTROPY_WEIGHTS = [0.1, 1.]
