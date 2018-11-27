@@ -2,7 +2,7 @@ LESION_IDS = {'EX':0, 'HE':1, 'MA':2, 'SE':3}
 
 #Modify the general parameters.
 IMAGE_DIR = '/home/qiqix/SegmentationSub1'
-LESION_NAME = 'MA'
+LESION_NAME = 'EX'
 CLASS_ID = LESION_IDS[LESION_NAME]
 NET_NAME = 'hednet'
 PREPROCESS = True
@@ -12,20 +12,20 @@ IMAGE_SIZE = 512
 EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
 USE_DNET = True
-D_WEIGHT = 0.1
+D_WEIGHT = 100
+D_MULTIPLY = False
 PATCH_SIZE = 128
-D_MULTIPLY = True
-MODELS_DIR = 'models_hednet_true_ma_gan_mul'
-LOG_DIR = 'drlog_hednet_true_ma_gan_mul'
+MODELS_DIR = 'models_hednet_true_ex_gan'
+LOG_DIR = 'drlog_hednet_true_ex_gan'
 LEARNING_RATE = 0.001
 RESUME_MODEL = None
 LESION_DICE_WEIGHT = 0.
 ROTATION_ANGEL = 20
 CROSSENTROPY_WEIGHTS = [0.1, 1.]
-RESUME_MODEL = 'pretrained/model_2640_ma.pth.tar'
+RESUME_MODEL = 'pretrained/model_6320_ex.pth.tar'
 
 #Modify the parameters for testing.
 TEST_BATCH_SIZE = 2
-TEST_MODEL = 'pretrained/model_2640_ma.pth.tar'
+TEST_MODEL = 'pretrained/model_6320_ex.pth.tar'
 SAVE_OUTPUT_IMAGES = True
-TEST_OUTPUT_DIR = 'test_true_pre_ma_gan'
+TEST_OUTPUT_DIR = 'test_true_pre_ex_gan'
