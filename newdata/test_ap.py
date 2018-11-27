@@ -10,7 +10,7 @@ from sklearn.metrics import precision_recall_curve, average_precision_score
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
-import config
+import config_test as config
 
 titles = [config.LESION_NAME]
 logdir = config.TEST_OUTPUT_DIR
@@ -60,6 +60,10 @@ if __name__ == '__main__':
         true_masks_all.extend(true_masks)
     soft_masks_all = np.array(soft_masks_all)
     true_masks_all = np.array(true_masks_all)
+    
+    needed_idxes = np.where(true_masks_all.sum(axis=(1,2,3)))
+    soft_masks_all = soft_masks_all[needed_idxes]
+    true_masks_all = true_masks_all[needed_idxes]
     
     predicted = np.transpose(soft_masks_all, (1, 0, 2, 3))
     predicted = predicted.round(2)

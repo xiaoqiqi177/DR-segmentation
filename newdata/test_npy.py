@@ -31,7 +31,7 @@ import os
 from dice_loss import dice_loss, dice_coeff
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-import config
+import config_test as config
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 

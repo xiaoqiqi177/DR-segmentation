@@ -11,7 +11,7 @@ IMAGE_SIZE = 512
 #Modify the parameters for training.
 EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
-D_WEIGHT = 0.1
+D_WEIGHT = 0.01
 D_MULTIPLY = False
 PATCH_SIZE = 64
 MODELS_DIR = 'models_hednet_true_ma_gan'
@@ -26,6 +26,6 @@ RESUME_MODEL = 'models_hednet_true_ma_gan/model_20.pth.tar'
 
 #Modify the parameters for testing.
 TEST_BATCH_SIZE = 2
-TEST_MODEL = 'pretrained/model_2640_ma.pth.tar'
+TEST_MODEL = 'models_hednet_true_ma_gan/model_2680.pth.tar'
 SAVE_OUTPUT_IMAGES = True
 TEST_OUTPUT_DIR = 'test_true_pre_ma_gan'
