@@ -13,10 +13,11 @@ EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
 D_WEIGHT = 0.1
 D_MULTIPLY = False
-PATCH_SIZE = 128
+PATCH_SIZE = 64
 MODELS_DIR = 'models_hednet_true_ex_gan'
 LOG_DIR = 'drlog_hednet_true_ex_gan'
-LEARNING_RATE = 0.001
+G_LEARNING_RATE = 0.001
+D_LEARNING_RATE = 0.1
 RESUME_MODEL = None
 LESION_DICE_WEIGHT = 0.
 ROTATION_ANGEL = 20
@@ -25,6 +26,6 @@ RESUME_MODEL = None
 
 #Modify the parameters for testing.
 TEST_BATCH_SIZE = 2
-TEST_MODEL = 'pretrained/model_6320_ex.pth.tar'
+TEST_MODEL = 'pretrained/model_2640_ma.pth.tar'
 SAVE_OUTPUT_IMAGES = True
-TEST_OUTPUT_DIR = 'test_true_pre_ex_gan'
+TEST_OUTPUT_DIR = 'test_true_pre_ma_gan'
