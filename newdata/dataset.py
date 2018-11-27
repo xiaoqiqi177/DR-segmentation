@@ -23,8 +23,18 @@ class IDRIDDataset(Dataset):
         """
         assert len(image_paths) == len(mask_paths)
         self.image_paths = image_paths
-        if mask_paths is not None:
-            self.mask_paths = mask_paths
+        self.mask_paths = mask_paths
+        self.images = [self.pil_loader(image_path) for image_path in image_paths]
+        w, h = self.images[0].size
+        self.masks = []
+        if self.mask_paths is not None:
+            for mask_path4 in mask_paths:
+                mask_path = mask_path4[class_id]
+                if mask_path is None:
+                    self.masks.append(Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8)))
+                else:
+                    self.masks.append(self.pil_loader(mask_path))
+        
         self.class_id = class_id
         self.transform = transform
 
@@ -37,17 +47,10 @@ class IDRIDDataset(Dataset):
             return img.convert('RGB')
 
     def __getitem__(self, idx):
-        image_path = self.image_paths[idx]
-        mask_path4 = self.mask_paths[idx]
-        item = self.pil_loader(image_path)
-        info = [item]
-        w, h = item.size
-        if self.mask_paths is not None:
-            for i, mask_path in enumerate(mask_path4):
-                if mask_path is None:
-                    info.append(Image.fromarray(np.zeros((h, w, 3), dtype=np.uint8)))
-                else:
-                    info.append(self.pil_loader(mask_path))
+        
+        info = [self.images[idx]]
+        if self.mask_paths:
+            info.append(self.masks[idx])
         if self.transform:
             info = self.transform(info)
         inputs = np.array(info[0])
@@ -56,11 +59,10 @@ class IDRIDDataset(Dataset):
             inputs = inputs / 255.
         
         if len(info) > 1:
-            masks = np.array([np.array(maskimg)[:, :, 0] for maskimg in info[1:]])/255.0
-            masks = masks[self.class_id:self.class_id+1, :, :]
-            masks_sum = np.sum(masks, axis=0)
-            empty_mask = 1 - masks_sum
-            masks = np.concatenate((empty_mask[None, :, :], masks), axis=0)
+            mask = np.array(np.array(info[1]))[:, :, 0] / 255.0
+            empty_mask = 1 - mask
+            masks = np.array([empty_mask, mask])
+
             return inputs, masks
         else:
             return inputs
