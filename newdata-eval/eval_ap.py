@@ -1,16 +1,23 @@
+"""
+File: eval_ap.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import os
 from optparse import OptionParser
 from sklearn.metrics import precision_recall_curve, average_precision_score
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import config
 
 parser = OptionParser()
 parser.add_option('-p', '--log-dir', dest='logdir', default='eval',
                     type='str', help='tensorboard log')
 (args, _) = parser.parse_args()
 
-titles = ['se']
+titles = ['ex', 'he', 'ma', 'se']
 
 logdir = args.logdir
 
@@ -19,7 +26,7 @@ def plot_precision_recall_all(predicted, gt):
     plt.figure(figsize=(7, 8))
     lines = []
     labels = []
-    n_number = 1
+    n_number = 4
     for i in range(n_number):
         precision, recall, _ = precision_recall_curve(gt[i], predicted[i])
         l, = plt.plot(recall, precision, color=colors[i], lw=2)
@@ -55,18 +62,14 @@ if __name__ == '__main__':
     for soft_npy_path, true_npy_path in zip(soft_npy_paths, true_npy_paths):
         soft_masks = np.load(soft_npy_path)
         true_masks = np.load(true_npy_path)
-        soft_masks_all.extend(soft_masks)
-        true_masks_all.extend(true_masks)
+        soft_masks_all.append(soft_masks)
+        true_masks_all.append(true_masks)
     soft_masks_all = np.array(soft_masks_all)
     true_masks_all = np.array(true_masks_all)
     
-    needed_idxes = np.where(true_masks_all.sum(axis=(1,2,3)))
-    soft_masks_all = soft_masks_all[needed_idxes]
-    true_masks_all = true_masks_all[needed_idxes]
-    
-    predicted = np.transpose(soft_masks_all, (1, 0, 2, 3))
+    predicted = np.transpose(soft_masks_all, (2, 0, 1, 3, 4))
     predicted = predicted.round(2)
-    gt = np.transpose(true_masks_all, (1, 0, 2, 3))
+    gt = np.transpose(true_masks_all, (2, 0, 1, 3, 4))
     predicted = np.reshape(predicted, (predicted.shape[0], -1))
     gt = np.reshape(gt, (gt.shape[0], -1))
     aps = []

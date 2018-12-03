@@ -48,26 +48,35 @@ except:
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
-    eval_tot = len(eval_loader)
+    eval_tot = 0
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
         for inputs, true_masks in eval_loader:
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
-            if net_name == 'unet':
-                masks_pred = model(inputs)
-            elif net_name == 'hednet':
-                masks_pred = model(inputs)[-1]
+            bs, _, h, w = inputs.shape
+            # ignore the last few patches
+            h_size = (h-1) // image_size
+            w_size = (w-1) // image_size
+            for i in range(h_size):
+                for j in range(w_size):
+                    h_max = (i+1)*image_size
+                    w_max = (j+1)*image_size
+                    inputs_part = inputs[:,:, i*image_size:h_max, j*image_size:w_max]
+                    if net_name == 'unet':
+                        masks_pred = model(inputs_part)
+                    elif net_name == 'hednet':
+                        masks_pred = model(inputs_part)[-1]
         
-            masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
-            masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
-            true_masks_indices = torch.argmax(true_masks, 1)
-            true_masks_flat = true_masks_indices.reshape(-1)
-            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            eval_loss_ce += loss_ce
-
-            masks_pred_softmax = softmax(masks_pred) 
+                    true_masks_part = true_masks[:,:, i*image_size:h_max, j*image_size:w_max]
+                    masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
+                    masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
+                    true_masks_indices = torch.argmax(true_masks_part, 1)
+                    true_masks_flat = true_masks_indices.reshape(-1)
+                    loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+                    eval_loss_ce += loss_ce
+                    eval_tot += 1
         return eval_loss_ce / eval_tot
 
 def denormalize(inputs):
@@ -274,10 +283,7 @@ if __name__ == '__main__':
                                 #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 RandomCrop(image_size),
                     ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
-                                Compose([
-                                RandomCrop(image_size),
-                    ]))
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID)
     elif net_name == 'hednet':
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, config.CLASS_ID, transform=
                                 Compose([
@@ -286,9 +292,7 @@ if __name__ == '__main__':
                                 #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
-                                Compose([
-                                RandomCrop(image_size),
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=Compose([
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
     train_loader = DataLoader(train_dataset, batchsize, shuffle=True)

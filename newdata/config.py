@@ -11,14 +11,21 @@ IMAGE_SIZE = 512
 #Modify the parameters for training.
 EPOCHES = 5000
 TRAIN_BATCH_SIZE = 4
-D_WEIGHT = 0.01
+USE_DNET = False
+D_WEIGHT = 100
 D_MULTIPLY = False
-PATCH_SIZE = 64
-MODELS_DIR = 'results/models_hednet_true_se_gan'
+PATCH_SIZE = 128
+MODELS_DIR = 'models_hednet_true_se_gan'
 LOG_DIR = 'drlog_hednet_true_se_gan'
-G_LEARNING_RATE = 0.0002
-D_LEARNING_RATE = 0.000038
+LEARNING_RATE = 0.00025
+RESUME_MODEL = None
 LESION_DICE_WEIGHT = 0.
 ROTATION_ANGEL = 20
 CROSSENTROPY_WEIGHTS = [0.1, 1.]
-RESUME_MODEL = 'results/models_hednet_true_se_gan/model_3160.pth.tar'
+RESUME_MODEL = 'models_hednet_true_se/model_2620.pth.tar'
+
+#Modify the parameters for testing.
+TEST_BATCH_SIZE = 2
+TEST_MODEL = 'pretrained/model_1140_se.pth.tar'
+SAVE_OUTPUT_IMAGES = True
+TEST_OUTPUT_DIR = 'test_true_pre_se_gan'

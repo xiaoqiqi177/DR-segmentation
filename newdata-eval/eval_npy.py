@@ -1,3 +1,9 @@
+"""
+File: eval_npy.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import sys
 import os
 from optparse import OptionParser

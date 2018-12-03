@@ -1,3 +1,9 @@
+"""
+File: input_viewer.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import sys
 import os
 import cv2
@@ -28,7 +34,6 @@ if True:
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
                                 Compose([
-                                RandomCrop(512),
                     ]))
     elif net_name == 'hednet':
         train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 1, transform=
@@ -40,14 +45,13 @@ if True:
                     ]))
         eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 1, transform=
                                 Compose([
-                                RandomCrop(512),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
 
 train_loader = DataLoader(train_dataset, 1, shuffle=True)
 eval_loader = DataLoader(eval_dataset, 1, shuffle=False)
 
-for inputs, true_masks in train_loader:
+for inputs, true_masks in eval_loader:
     if net_name == 'unet':
         input_img = np.uint8(np.transpose(inputs[0], (1, 2, 0)) * 255.)[:,:,::-1]
     else:

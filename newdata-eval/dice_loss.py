@@ -1,3 +1,9 @@
+"""
+File: dice_loss.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import torch
 from torch.autograd import Function, Variable
 

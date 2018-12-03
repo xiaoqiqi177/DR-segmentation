@@ -1,87 +1,85 @@
+"""
+File: train.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import sys
+from torch.autograd import Variable
 import os
 from optparse import OptionParser
 import numpy as np
+from tqdm import tqdm
+import copy
 
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
-
 from torch.optim import lr_scheduler
+
+import config
 from unet import UNet
 from hednet import HNNNet
+from dnet import DNet
 from utils import get_images
 from dataset import IDRIDDataset
 from torchvision import datasets, models, transforms
 from transform.transforms_group import *
 from torch.utils.data import DataLoader, Dataset
-import copy
 from logger import Logger
-import os
 from dice_loss import dice_loss, dice_coeff
-from tqdm import tqdm
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-parser = OptionParser()
-parser.add_option('-e', '--epochs', dest='epochs', default=5, type='int',
-                      help='number of epochs')
-parser.add_option('-b', '--batch-size', dest='batchsize', default=2,
-                      type='int', help='batch size')
-parser.add_option('-l', '--learning-rate', dest='lr', default=0.1,
-                      type='float', help='learning rate')
-parser.add_option('-r', '--resume', dest='resume',
-                      default=False, help='resume file model')
-parser.add_option('-p', '--log-dir', dest='logdir', default='drlog',
-                    type='str', help='tensorboard log')
-parser.add_option('-m', '--model-dir', dest='modeldir', default='./models',
-                    type='str', help='models stored')
-parser.add_option('-n', '--net-name', dest='netname', default='unet',
-                    type='str', help='net name, unet or hednet')
-parser.add_option('-g', '--preprocess', dest='preprocess', action='store_true',
-                      default=False, help='preprocess input images')
-parser.add_option('-i', '--healthy-included', dest='healthyincluded', action='store_true',
-                      default=False, help='include healthy images')
-
-(args, _) = parser.parse_args()
-
-logger = Logger('./logs', args.logdir)
-dir_checkpoint = args.modeldir
-net_name = args.netname
-lesion_dice_weights = [0.]
-lesions = ['se']
-rotation_angle = 20
-image_size = 512
-image_dir = '/home/qiqi/SegmentationSub1'
+logger = Logger('./results/logs', config.LOG_DIR)
+dir_checkpoint = config.MODELS_DIR
+net_name = config.NET_NAME
+lesion_dice_weights = [config.LESION_DICE_WEIGHT]
+lesions = [config.LESION_NAME]
+rotation_angle = config.ROTATION_ANGEL
+image_size = config.IMAGE_SIZE
+image_dir = config.IMAGE_DIR
+batchsize = config.TRAIN_BATCH_SIZE
+try:
+    d_weight = config.D_WEIGHT
+except:
+    d_weight = 0.
 
 softmax = nn.Softmax(1)
 def eval_model(model, eval_loader, criterion):
     model.eval()
-    eval_tot = len(eval_loader)
-    dice_coeffs = np.zeros(1)
+    eval_tot = 0
     eval_loss_ce = 0.
 
     with torch.set_grad_enabled(False):
         for inputs, true_masks in eval_loader:
             inputs = inputs.to(device=device, dtype=torch.float)
             true_masks = true_masks.to(device=device, dtype=torch.float)
-            if net_name == 'unet':
-                masks_pred = model(inputs)
-            elif net_name == 'hednet':
-                masks_pred = model(inputs)[-1]
+            bs, _, h, w = inputs.shape
+            # ignore the last few patches
+            h_size = (h-1) // image_size
+            w_size = (w-1) // image_size
+            for i in range(h_size):
+                for j in range(w_size):
+                    h_max = (i+1)*image_size
+                    w_max = (j+1)*image_size
+                    inputs_part = inputs[:,:, i*image_size:h_max, j*image_size:w_max]
+                    if net_name == 'unet':
+                        masks_pred = model(inputs_part)
+                    elif net_name == 'hednet':
+                        masks_pred = model(inputs_part)[-1]
         
-            masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
-            masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
-            true_masks_indices = torch.argmax(true_masks, 1)
-            true_masks_flat = true_masks_indices.reshape(-1)
-            loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
-            eval_loss_ce += loss_ce
-
-            masks_pred_softmax = softmax(masks_pred) 
-            dice_coeffs += dice_coeff(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
-        return dice_coeffs / eval_tot, eval_loss_ce / eval_tot
+                    true_masks_part = true_masks[:,:, i*image_size:h_max, j*image_size:w_max]
+                    masks_pred_transpose = masks_pred.permute(0, 2, 3, 1)
+                    masks_pred_flat = masks_pred_transpose.reshape(-1, masks_pred_transpose.shape[-1])
+                    true_masks_indices = torch.argmax(true_masks_part, 1)
+                    true_masks_flat = true_masks_indices.reshape(-1)
+                    loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
+                    eval_loss_ce += loss_ce
+                    eval_tot += 1
+        return eval_loss_ce / eval_tot
 
 def denormalize(inputs):
     if net_name == 'unet':
@@ -91,6 +89,7 @@ def denormalize(inputs):
         std = torch.FloatTensor([0.229, 0.224, 0.225]).to(device)
         return ((inputs * std[None, :, None, None] + mean[None, :, None, None])*255.).to(device=device, dtype=torch.uint8)
 
+    
 def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     true_masks = (true_masks_t * 255.).to(device=device, dtype=torch.uint8)
     masks_pred_softmax = (masks_pred_softmax_t.detach() * 255.).to(device=device, dtype=torch.uint8)
@@ -108,16 +107,24 @@ def generate_log_images(inputs_t, true_masks_t, masks_pred_softmax_t):
     images_batch[:, 0, :, w*2+pad_size*2:] = masks_pred_softmax[:, 1, :, :]
     return images_batch
   
+def image_to_patch(image, patch_size):
+    bs, channel, h, w = image.shape
+    return (image.reshape((bs, channel, h//patch_size, patch_size, w//patch_size, patch_size))
+            .permute(2, 4, 0, 1, 3, 5)
+            .reshape((-1, channel, patch_size, patch_size)))
 
-def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0):
+
+def train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batch_size, num_epochs=5, start_epoch=0, start_step=0, dnet=None):
     model.to(device=device)
+    if dnet:
+        dnet.to(device=device)
     tot_step_count = start_step
     for epoch in range(start_epoch, start_epoch+num_epochs):
         print('Starting epoch {}/{}.'.format(epoch + 1, start_epoch+num_epochs))
         scheduler.step()
         model.train()
         epoch_loss_ce = 0
-        epoch_losses_dice = [0]
+        epoch_loss_d = 0
         N_train = len(train_dataset)
         batch_step_count = 0
         vis_images = []
@@ -136,7 +143,7 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
             true_masks_flat = true_masks_indices.reshape(-1)
             loss_ce = criterion(masks_pred_flat, true_masks_flat.long())
             masks_pred_softmax = softmax(masks_pred) 
-            losses_dice = dice_loss(masks_pred_softmax[:, 1:, :, :], true_masks[:, 1:, :, :])
+
             
             # Save images
             if (epoch + 1) % 20 == 0:
@@ -145,14 +152,31 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
 
             ce_weight = 1.
             loss = loss_ce * ce_weight
-            for lesion_dice_weight, loss_dice in zip(lesion_dice_weights, losses_dice):
-                loss += loss_dice * lesion_dice_weight
             
             epoch_loss_ce += loss_ce.item()
             epoch_loss_tot = epoch_loss_ce * ce_weight
-            for i, loss_dice in enumerate(losses_dice):
-                epoch_losses_dice[i] += losses_dice[i].item() * lesion_dice_weights[i]
-                epoch_loss_tot += epoch_losses_dice[i]
+
+            # add descriminator loss
+            if dnet:
+                dnet.train()
+                if config.D_MULTIPLY:
+                    input_real = torch.matmul(inputs, true_masks[:, 1:, :, :])
+                    input_real = image_to_patch(input_real, config.PATCH_SIZE)
+                    input_fake = torch.matmul(inputs, masks_pred_softmax[:, 1:, :, :])
+                    input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
+                else:
+                    input_real = torch.cat((inputs, true_masks[:, 1:, :, :]), 1)
+                    input_real = image_to_patch(input_real, config.PATCH_SIZE)
+                    input_fake = torch.cat((inputs, masks_pred_softmax[:, 1:, :, :]), 1)
+                    input_fake = image_to_patch(input_fake, config.PATCH_SIZE)
+                d_real = dnet(input_real)
+                d_fake = dnet(input_fake)
+                d_real_loss = -torch.mean(d_real)
+                d_fake_loss = torch.mean(d_fake)
+                loss_d = d_real_loss + d_fake_loss
+                epoch_loss_d += loss_d.item()
+                epoch_loss_tot += epoch_loss_d
+                loss += loss_d * d_weight
 
             optimizer.zero_grad()
             loss.backward()
@@ -163,20 +187,29 @@ def train_model(model, train_loader, eval_loader, criterion, optimizer, schedule
         
         # Traning logs
         logger.scalar_summary('train_loss_ce', epoch_loss_ce / batch_step_count, step=tot_step_count)
-        for lesion, epoch_loss_dice in zip(lesions, epoch_losses_dice):
-            logger.scalar_summary('train_loss_dice_'+lesion, epoch_loss_dice / batch_step_count, step=tot_step_count)
+        if dnet:
+            logger.scalar_summary('train_loss_d', epoch_loss_d / batch_step_count, step=tot_step_count)
         logger.scalar_summary('train_loss_tot', epoch_loss_tot / batch_step_count, step=tot_step_count)
         
+        print('loss_ce:', epoch_loss_ce / batch_step_count)
+
         # Validation logs
-        dice_coeffs, eval_loss_ce = eval_model(model, eval_loader, criterion)
+        eval_loss_ce = eval_model(model, eval_loader, criterion)
         logger.scalar_summary('eval_loss_ce', eval_loss_ce, step=tot_step_count)
-        for lesion, coeff in zip(lesions, dice_coeffs):
-            logger.scalar_summary('dice_coeff_'+lesion, coeff, step=tot_step_count)
 
         if not os.path.exists(dir_checkpoint):
             os.mkdir(dir_checkpoint)
         if (epoch + 1) % 20 == 0:
-            state = {
+            if dnet:
+                state = {
+                    'epoch': epoch,
+                    'step': tot_step_count,
+                    'g_state_dict': model.state_dict(),
+                    'd_state_dict': dnet.state_dict(),
+                    'optimizer': optimizer.state_dict()
+                    }
+            else:
+                state = {
                     'epoch': epoch,
                     'step': tot_step_count,
                     'state_dict': model.state_dict(),
@@ -195,57 +228,70 @@ if __name__ == '__main__':
     else:
         model = HNNNet(pretrained=True, class_number=2)
    
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
+    if config.USE_DNET:
+        if config.D_MULTIPLY:
+            dnet = DNet(input_dim=3, output_dim=1, input_size=config.PATCH_SIZE)
+        else:
+            dnet = DNet(input_dim=4, output_dim=1, input_size=config.PATCH_SIZE)
+    else:
+        dnet = None
+
+    resume = config.RESUME_MODEL
+    if resume:
+        if os.path.isfile(resume):
+            print("=> loading checkpoint '{}'".format(resume))
+            checkpoint = torch.load(resume)
             start_epoch = checkpoint['epoch']+1
             start_step = checkpoint['step']
-            model.load_state_dict(checkpoint['state_dict'])
-            print('Model loaded from {}'.format(args.resume))
+            try:
+                model.load_state_dict(checkpoint['state_dict'])
+            except:
+                model.load_state_dict(checkpoint['g_state_dict'])
+                dnet.load_state_dict(checkpoint['d_state_dict'])
+            print('Model loaded from {}'.format(resume))
         else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+            print("=> no checkpoint found at '{}'".format(resume))
     else:
         start_epoch = 0
         start_step = 0
 
-    train_image_paths, train_mask_paths = get_images(image_dir, args.preprocess, phase='train', healthy_included=args.healthyincluded)
-    eval_image_paths, eval_mask_paths = get_images(image_dir, args.preprocess, phase='eval', healthy_included=args.healthyincluded)
+    train_image_paths, train_mask_paths = get_images(image_dir, config.PREPROCESS, phase='train')
+    eval_image_paths, eval_mask_paths = get_images(image_dir, config.PREPROCESS, phase='eval')
 
     if net_name == 'unet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, config.CLASS_ID, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 RandomCrop(image_size),
                     ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
                                 Compose([
-                                RandomCrop(image_size),
                     ]))
     elif net_name == 'hednet':
-        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, 4, transform=
+        train_dataset = IDRIDDataset(train_image_paths, train_mask_paths, config.CLASS_ID, transform=
                                 Compose([
                                 RandomRotation(rotation_angle),
                                 RandomCrop(image_size),
                                 #ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
-        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, 4, transform=
+        eval_dataset = IDRIDDataset(eval_image_paths, eval_mask_paths, config.CLASS_ID, transform=
                                 Compose([
-                                RandomCrop(image_size),
                                 Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                     ]))
+    train_loader = DataLoader(train_dataset, batchsize, shuffle=True)
+    eval_loader = DataLoader(eval_dataset, batchsize, shuffle=False)
 
-    train_loader = DataLoader(train_dataset, args.batchsize, shuffle=True)
-    eval_loader = DataLoader(eval_dataset, args.batchsize, shuffle=False)
-
-    optimizer = optim.SGD(model.parameters(),
-                              lr=args.lr,
+    params = list(model.parameters())
+    if dnet:
+        params += list(dnet.parameters())
+    optimizer = optim.SGD(params,
+                              lr=config.LEARNING_RATE,
                               momentum=0.9,
                               weight_decay=0.0005)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)
-    #bg, ex, he, ma, se
-    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor([0.1, 1.]).to(device))
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=200, gamma=0.9)
+    criterion = nn.CrossEntropyLoss(weight=torch.FloatTensor(config.CROSSENTROPY_WEIGHTS).to(device))
     
-    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, args.batchsize, num_epochs=args.epochs, start_epoch=start_epoch, start_step=start_step)
+    train_model(model, train_loader, eval_loader, criterion, optimizer, scheduler, batchsize, \
+            num_epochs=config.EPOCHES, start_epoch=start_epoch, start_step=start_step, dnet=dnet)

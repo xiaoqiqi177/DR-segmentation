@@ -1,7 +1,27 @@
+"""
+File: utils.py
+Created by: Qiqi Xiao
+Email: xiaoqiqi177<at>gmail<dot>com
+"""
+
 import os
 import glob
 from preprocess import clahe_gridsize
 import cv2
+
+import torch.nn as nn
+
+def initialize_weights(net):
+    for m in net.modules():
+        if isinstance(m, nn.Conv2d):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.ConvTranspose2d):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
+        elif isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02)
+            m.bias.data.zero_()
 
 train_ratio = 0.9
 eval_ratio = 0.1
@@ -37,7 +57,7 @@ def get_images(image_dir, preprocess=False, phase='train', healthy_included=True
             meanbright /= images_number
             
             imgs_ori = glob.glob(os.path.join(image_dir, 'OriginalImages/'+setname+'/*.jpg'))
-            # preprocess for apparent.
+            
             for img_path in imgs_ori:
                 img_name = os.path.split(img_path)[-1].split('.')[0]
                 mask_path = os.path.join(image_dir, 'Groundtruths', setname, 'Mask', img_name+'_MASK.png')
