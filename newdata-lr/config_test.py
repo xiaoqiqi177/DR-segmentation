@@ -10,6 +10,6 @@ IMAGE_SIZE = 512
 
 #Modify the parameters for testing.
 TEST_BATCH_SIZE = 1
-TEST_MODEL = 'results/models_hednet_true_se_gan/model_1880.pth.tar'
+TEST_MODEL = 'results/models_hednet_true_se_gan/model_620.pth.tar'
 SAVE_OUTPUT_IMAGES = True
 TEST_OUTPUT_DIR = 'results/test_true_pre_se'
